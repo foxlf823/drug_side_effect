@@ -49,8 +49,7 @@ public class Tool {
 	public Sider sider;
 	public MeshDict meshDict;
 
-	public BrownCluster entityBC;
-	public BrownCluster relationBC;
+	public BrownCluster brown;
 	
 	public StopWord stopWord;
 	

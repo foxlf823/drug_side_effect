@@ -1,4 +1,4 @@
-package utils;
+package deprecated;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.HashMap;

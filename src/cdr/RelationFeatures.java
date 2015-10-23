@@ -104,8 +104,8 @@ public class RelationFeatures extends PerceptronFeatureFunction {
 			addFeature("#PSF_"+hd2Suf,1.0, status, y, map);
 			
 			// external
-			String bcHdFormer = tool.entityBC.getPrefix(hdFormer);
-			String bcHdLatter = tool.entityBC.getPrefix(hdLatter);
+			String bcHdFormer = tool.brown.getPrefix(hdFormer);
+			String bcHdLatter = tool.brown.getPrefix(hdLatter);
 			addFeature("#HMBC_"+bcHdFormer, 1.0, status, y, map);
 			addFeature("#HMBC_"+bcHdLatter, 1.0, status, y, map);
 			

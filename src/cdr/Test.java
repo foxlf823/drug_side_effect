@@ -81,9 +81,9 @@ public class Test {
 		//makeGoldAnswerByGroup(group, "D:/research/biocreative/2015/CDR_Dev 0715/CDR_DevelopmentSet.PubTator.txt", "D:/research/temp/biocreative2015/CDR_DevelopmentSet_latter.txt",2);
 		//makeGoldAnswerByGroup(group, "D:/research/temp/biocreative2015/CDR_Training_Development.txt", "D:/research/temp/biocreative2015/development_pubtator.txt");
 		
-		//makeBrownClusterData(devDoc, "E:/biocreative2015/dev_for_bc.txt", tool);
+		//makeBrownClusterData(devDoc, "E:/biocreative2015/brown_corpus_bc5cdr.txt", tool);
 		
-		//makeW2VCluster(vector, "E:/biocreative2015/w2v_cluster.txt");
+		makeW2VCluster(vector, "E:/biocreative2015/w2v_cluster.txt");
 		
 		/*{
 			HashSet<String> groupIds = new HashSet<>();
@@ -117,8 +117,7 @@ public class Test {
 	
 	
 	public static void makeW2VCluster(String vector, String output) throws Exception {
-		Word2Vec w2v = new Word2Vec();
-		w2v.loadWord2VecOutput(vector);
+		Word2Vec w2v = new Word2Vec(vector);
 		ArrayList<String> words = new ArrayList<>();
 		ArrayList<Matrix> vectors = new ArrayList<>();
 		for(String key:w2v.wordSet.keySet()) {

@@ -89,8 +89,7 @@ public class CDRmain {
 		Sider sider = new Sider(sider_dict);
 		IDictionary dict = new edu.mit.jwi.Dictionary(new URL("file", null, wordnet_dict));
 		dict.open();
-		Word2Vec w2v = new Word2Vec();
-		w2v.loadWord2VecOutput(vector);
+		Word2Vec w2v = new Word2Vec(vector);
 		WordClusterReader wcr = new WordClusterReader(vector_cluster);
 		LexicalizedParser lp = LexicalizedParser.loadModel(parser);
 		
@@ -98,7 +97,7 @@ public class CDRmain {
 		tool.sentSplit = sentSplit;
 		tool.tagger = tagger;
 		tool.morphology = morphology;
-		tool.entityBC = entityBC;
+		tool.brown = entityBC;
 		tool.sider = sider;
 		tool.dict = dict;
 		tool.w2v = w2v;

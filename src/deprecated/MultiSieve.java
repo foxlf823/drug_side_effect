@@ -1,4 +1,4 @@
-package utils;
+package deprecated;
 import java.io.StringReader;
 import java.util.Iterator;
 import java.util.Map;

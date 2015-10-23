@@ -13,13 +13,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Pattern;
 
-import utils.CTDSaxParse;
-import utils.CTDdisease;
-import utils.CtdEntry;
-import utils.MultiSieve;
-import utils.Normalization;
 import cc.mallet.fst.CRF;
 import cc.mallet.fst.CRFTrainerByLabelLikelihood;
 import cc.mallet.fst.Transducer;
@@ -32,22 +28,22 @@ import cn.fox.biomedical.Dictionary;
 import cn.fox.machine_learning.BrownCluster;
 import cn.fox.mallet.MalletSequenceTaggerInstance;
 import cn.fox.mallet.MyCRFPipe;
-import cn.fox.nlp.EnglishPos;
 import cn.fox.nlp.Segment;
 import cn.fox.nlp.Sentence;
 import cn.fox.nlp.SentenceSplitter;
 import cn.fox.nlp.TokenizerWithSegment;
-import cn.fox.nlp.Word2Vec;
-import cn.fox.nlp.WordVector;
 import cn.fox.stanford.Tokenizer;
-import cn.fox.utils.CharCode;
 import cn.fox.utils.Evaluater;
 import cn.fox.utils.IoUtils;
 import cn.fox.utils.ObjectSerializer;
 import cn.fox.utils.StopWord;
 import cn.fox.utils.WordNetUtil;
+import deprecated.MultiSieve;
+import deprecated.Normalization;
 import drug_side_effect_utils.BiocDocument;
 import drug_side_effect_utils.BiocXmlParser;
+import drug_side_effect_utils.CTDSaxParse;
+import drug_side_effect_utils.CtdEntry;
 import drug_side_effect_utils.Entity;
 import drug_side_effect_utils.LexicalPattern;
 import drug_side_effect_utils.Tool;
@@ -56,18 +52,8 @@ import edu.mit.jwi.IDictionary;
 import edu.mit.jwi.item.ISynset;
 import edu.mit.jwi.item.POS;
 import edu.stanford.nlp.ling.CoreLabel;
-import edu.stanford.nlp.ling.IndexedWord;
-import edu.stanford.nlp.parser.lexparser.LexicalizedParser;
-import edu.stanford.nlp.process.CoreLabelTokenFactory;
 import edu.stanford.nlp.process.Morphology;
-import edu.stanford.nlp.process.PTBTokenizer;
-import edu.stanford.nlp.process.TokenizerFactory;
-import edu.stanford.nlp.semgraph.SemanticGraph;
-import edu.stanford.nlp.semgraph.SemanticGraphEdge;
 import edu.stanford.nlp.tagger.maxent.MaxentTagger;
-import edu.stanford.nlp.trees.GrammaticalStructure;
-import edu.stanford.nlp.trees.Tree;
-import edu.stanford.nlp.trees.TypedDependency;
 import gnu.trove.TObjectDoubleHashMap;
 
 public class Main {
@@ -81,6 +67,10 @@ public class Main {
 		properties.load(fis);    
 		fis.close();
 		
+		boolean preprocessTrain = Boolean.parseBoolean(args[1]);
+		boolean preprocessDev = Boolean.parseBoolean(args[2]);
+		boolean bTrain = Boolean.parseBoolean(args[3]);
+		
 		String common_english_abbr = properties.getProperty("common_english_abbr");
 		String pos_tagger = properties.getProperty("pos_tagger");
 		String bioc_dtd = properties.getProperty("bioc_dtd");
@@ -92,19 +82,16 @@ public class Main {
 		String train_instance_dir = properties.getProperty("train_instance_dir");
 		String bioc_documents = properties.getProperty("bioc_documents");
 		String entity_recognizer_ser = properties.getProperty("entity_recognizer_ser");
-		String parser = properties.getProperty("parser");	
 		String max_train_times = properties.getProperty("max_train_times");
-		String bioc_documents_dev = properties.getProperty("bioc_documents_dev");
-		String dev_instance_dir = properties.getProperty("dev_instance_dir");
+		String bioc_documents_test = properties.getProperty("bioc_documents_test");
+		String test_instance_dir = properties.getProperty("test_instance_dir");
 		String entity_out = properties.getProperty("entity_out");
 		String ctd_xml = properties.getProperty("ctd_xml");
-		String cdrDev_abbr = properties.getProperty("cdrDev_abbr");
-		String cdrDev_sf_lf_pairs = properties.getProperty("cdrDev_sf_lf_pairs");
 		String stop_word = properties.getProperty("stop_word");
 		String brown_cluster_path = properties.getProperty("brown_cluster_path");
-		String vector = properties.getProperty("vector");
 		String vector_cluster = properties.getProperty("vector_cluster");
-		String train_dev_xml = properties.getProperty("train_dev_xml");
+		//String train_dev_xml = properties.getProperty("train_dev_xml");
+		boolean usePostProcess = Boolean.parseBoolean(properties.getProperty("usePostProcess"));
 		
 		SentenceSplitter sentSplit = new SentenceSplitter(new Character[]{';'},false, common_english_abbr);
 		MaxentTagger tagger = new MaxentTagger(pos_tagger);
@@ -114,7 +101,6 @@ public class Main {
 		edu.mit.jwi.Dictionary dict = new edu.mit.jwi.Dictionary(new URL("file", null, wordnet_dict));
 		dict.open();
 		Morphology morphology = new Morphology();
-		TokenizerFactory<CoreLabel> tokenizerFactory = PTBTokenizer.factory(new CoreLabelTokenFactory(), "ptb3Escaping=false");
 		
 		
 		Dictionary jochem = new Dictionary(jochem_dict, 1);
@@ -123,10 +109,7 @@ public class Main {
 		Dictionary chemElem = new Dictionary(chemical_element_abbr, 1);
 		
 		BrownCluster entityBC = new BrownCluster(brown_cluster_path, 100);
-		Word2Vec w2v = new Word2Vec();
-		w2v.loadWord2VecOutput(vector);
 		WordClusterReader wcr = new WordClusterReader(vector_cluster);
-		LexicalizedParser lp = LexicalizedParser.loadModel(parser);
 		
 		Tool tool = new Tool();
 		tool.sentSplit = sentSplit;
@@ -139,40 +122,32 @@ public class Main {
 		tool.dict = dict;
 		tool.morphology = morphology; 
 		tool.stopWord = stopWord;
-		tool.entityBC = entityBC;
-		tool.w2v = w2v;
+		tool.brown = entityBC;
 		tool.wcr = wcr;
-		tool.lp = lp;
-		tool.tokenizerFactory = tokenizerFactory;
 		
-		// set parameters here !!!!!!
-		boolean preprocessTrain = true;
-		boolean preprocessDev = true;
-		boolean bTrain = true;
 		
-		ArrayList<BiocDocument> documents = xmlParser.parseBiocXmlFile(train_dev_xml);	
-		ArrayList<BiocDocument> devDocuments = xmlParser.parseBiocXmlFile(bioc_documents_dev);	
+		
+		ArrayList<BiocDocument> trainDocuments = xmlParser.parseBiocXmlFile(bioc_documents);	
+		ArrayList<BiocDocument> testDocuments = xmlParser.parseBiocXmlFile(bioc_documents_test);	
 		
 		
 		if(preprocessTrain) {
 			IoUtils.clearDirectory(new File(train_instance_dir));
-			for(BiocDocument document:documents) {
+			for(BiocDocument document:trainDocuments) {
 				preprocess(tool, train_instance_dir, document);			
 			}  
 		}
 		
 		
 		if(preprocessDev) {
-			IoUtils.clearDirectory(new File(dev_instance_dir));
-			for(BiocDocument document:devDocuments) {
-				preprocess(tool, dev_instance_dir, document);			
+			IoUtils.clearDirectory(new File(test_instance_dir));
+			for(BiocDocument document:testDocuments) {
+				preprocess(tool, test_instance_dir, document);			
 			}   
 		}
 		
-		List[] splitted = null;
-		splitted = new ArrayList[2];
-		splitted[0] = new ArrayList<File>(Arrays.asList(new File(train_instance_dir).listFiles()));
-		splitted[1] = new ArrayList<File>(Arrays.asList(new File(dev_instance_dir).listFiles()));
+		List<File> trainFiles = new ArrayList<File>(Arrays.asList(new File(train_instance_dir).listFiles()));
+		List<File> testFiles = new ArrayList<File>(Arrays.asList(new File(test_instance_dir).listFiles()));
 		
 		
 		CRF crf = null;
@@ -182,8 +157,8 @@ public class Main {
 			// train
 			Pipe p = new MyCRFPipe();
 			InstanceList trainData = new InstanceList(p);
-			for(int j=0;j<splitted[0].size();j++) {
-				File instanceFile = (File)splitted[0].get(j);
+			for(int j=0;j<trainFiles.size();j++) {
+				File instanceFile = trainFiles.get(j);
 				trainData.addThruPipe(new LineGroupIterator(new InputStreamReader(new FileInputStream(instanceFile), "UTF-8"),Pattern.compile("^\\s*$"), true));
 			}
 			crf = train(trainData, null, Integer.parseInt(max_train_times));
@@ -194,34 +169,9 @@ public class Main {
 		}	
 		
 		
-		
-		
-		// prepare for normalization
-		Normalization cdrEntityNorm = new Normalization();		
-		cdrEntityNorm.loadCdrAbbre(cdrDev_abbr,cdrDev_sf_lf_pairs);
-		
-		CTDSaxParse ctdSaxParse = new CTDSaxParse("Chemical");
-		ctdSaxParse.startCTDSaxParse(ctd_xml);
-		
-		List<CtdEntry> ctdChemialList = ctdSaxParse.chemList;
-		// group names with the same id
-		Map<String,List<String>> idToNames = new HashMap<String,List<String>>();
-		for(CtdEntry tempChem:ctdChemialList){
-			List<String> names = new ArrayList<String>();
-			names.add(tempChem.name);
-			for(String synonymy:tempChem.synonyms){
-				names.add(synonymy);			
-			}
-			idToNames.put(tempChem.id,names);			
-		}
-		
-		// map: one id one name
-		Map<String,String> idToName = new HashMap<String,String>();
-		for(CtdEntry tempChem: ctdChemialList){
-			idToName.put(tempChem.id,tempChem.name);
-		}	
-		
-		MultiSieve multiSieve  = new MultiSieve(idToNames);
+		// prepare for normalization		
+		CTDSaxParse ctdSaxParse = new CTDSaxParse(ctd_xml);
+		Map<String, String> mapName2Id = ctdSaxParse.buildIdNameMap();
 		
 		// test
 		int countPredict = 0;
@@ -229,18 +179,18 @@ public class Main {
 		int countCorrect = 0;
 		BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(entity_out),"UTF-8"));
 		
-		for(int j=0;j<splitted[1].size();j++) { // for each test file
+		for(int j=0;j<testFiles.size();j++) { // for each test file
 			
-			File instanceFile = (File)splitted[1].get(j);
+			File instanceFile = testFiles.get(j);
 			InstanceList testData = new InstanceList(crf.getInputPipe());
 			testData.addThruPipe(new LineGroupIterator(new InputStreamReader(new FileInputStream(instanceFile), "UTF-8"),Pattern.compile("^\\s*$"), true));
 			
-			BiocDocument document = getBiocDocumentByID(instanceFile.getName().substring(0, instanceFile.getName().indexOf(".")), devDocuments);
+			BiocDocument document = getBiocDocumentByID(instanceFile.getName().substring(0, instanceFile.getName().indexOf(".")), testDocuments);
 			
-			ArrayList<Entity> preEntities = getEntities(document, testData, crf, tool);
+			ArrayList<Entity> preEntities = getEntities(document, testData, crf, tool, usePostProcess);
 
 						
-			/*countPredict+= preEntities.size();
+			countPredict+= preEntities.size();
 			ArrayList<Entity> goldEntities = document.entities;
 			countTrue += goldEntities.size();
 			for(Entity preEntity:preEntities) {
@@ -250,34 +200,13 @@ public class Main {
 						break;
 					}
 				}
-			}*/
+			}
 			
 			// normalization
 			for(Entity preEntity:preEntities) {
+				preEntity.preMeshId = normalizeDictLookup(preEntity, mapName2Id);
 				
-				String preMeshId = null;
-				
-				// multi sieve
-				String tempReturn = null;
-				String entityText = cdrEntityNorm.replaceAbbre(preEntity, document);
-				entityText = entityText.trim();
-				List<String> entityTextList = new ArrayList<String>();				
-				String returnMeshId = multiSieve.isExactMap(entityText);
-				if(returnMeshId!= null){
-					preMeshId = returnMeshId;					
-				} else if((tempReturn = multiSieve.singularToPlural(entityText, entityTextList)) != null){
-					preMeshId = tempReturn;					
-				} else if((tempReturn= multiSieve.dropPrepositionAndSwapping(entityText, entityTextList,tokenizerFactory))!=null){
-					preMeshId = tempReturn;
-				} else if((tempReturn = multiSieve.compareStemmer(entityTextList,idToName))!=null){
-				   preMeshId = tempReturn;
-				} 
-				
-				if(preMeshId==null)
-					preMeshId = "-1";
-				preEntity.preMeshId = preMeshId;
-				
-				bw.write(preEntity.id +"\t"+preEntity.offset +"\t"+(preEntity.offset+preEntity.text.length())+"\t"+preEntity.text+"\t"+ preEntity.type + "\t"+/*"MESH:"+*/preEntity.preMeshId);
+				bw.write(preEntity.id +"\t"+preEntity.offset +"\t"+(preEntity.offset+preEntity.text.length())+"\t"+preEntity.text+"\t"+ preEntity.type + "\t"+preEntity.preMeshId);
 				bw.write("\n");
 			}
 			
@@ -294,12 +223,19 @@ public class Main {
 		System.out.println(precision+"\t"+recall+"\t"+f1); 
 
 	}
+	
+	public static String normalizeDictLookup(Entity entity, Map<String, String> mapName2Id) {
+		String low = entity.text.toLowerCase();
+		if(mapName2Id.keySet().contains(low)) {
+			return mapName2Id.get(low);
+		} else 
+			return "-1";
+	}
 
 	
 	public static String preprocess(Tool tool, String instanceOutDir, BiocDocument document) throws Exception {
 		SentenceSplitter sentSplit = tool.sentSplit;
 		MaxentTagger tagger = tool.tagger;
-		IDictionary dict = tool.dict;
 		Morphology morphology = tool.morphology;
 		
 		ArrayList<MalletSequenceTaggerInstance> instanceList = new ArrayList<MalletSequenceTaggerInstance>();
@@ -323,21 +259,10 @@ public class Main {
 			for(int i=0;i<tokens.size();i++) {
 				morphology.stem(tokens.get(i));
 			}
-			// parsing
-			/*Tree root = tool.lp.apply(tokens);
-			root.indexLeaves();
-			root.setSpans();
-			List<Tree> leaves = root.getLeaves();*/
 			
-			// depend
-			/*GrammaticalStructure gs = tool.gsf.newGrammaticalStructure(root);
-			List<TypedDependency> tdl = gs.typedDependenciesCCprocessed();
-		    SemanticGraph depGraph = new SemanticGraph(tdl);*/
 			
 			sent.tokens = tokens;
-			/*sent.root = root;
-			sent.leaves = leaves;
-			sent.depGraph = depGraph;*/
+			
 			
 			for(int i=0;i<tokens.size();i++) {
 				CoreLabel token = tokens.get(i);
@@ -386,52 +311,94 @@ public class Main {
 	
 	public static void prepareFeatures(Tool tool, TObjectDoubleHashMap<String> map, Sentence sent, int i, 
 			MalletSequenceTaggerInstance myInstance) throws Exception{
-			
+				
 		CoreLabel token = sent.tokens.get(i);
-		String lemmaLow = token.lemma().toLowerCase();
+		int window = 2;
+		int fixLen = 4;
+		// bag-of-word
+		map.put("WD_"+token.word(), 1.0);
+		map.put("LM_"+token.lemma(),1.0);
+		map.put("PO_"+token.tag(),1.0);
+		map.put("PA_"+LexicalPattern.pipe(token.word()), 1.0);
 		
-		map.put(lemmaLow,1.0);
-		for(int j=i-1, count=1;count>0 && j>=0; count--,j--) {
-			map.put(sent.tokens.get(j).lemma().toLowerCase(),1.0); 
+		int len = token.lemma().length()>fixLen ? fixLen:token.lemma().length();
+		map.put("PR_"+token.lemma().substring(0, len),1.0);
+		map.put("SF_"+token.lemma().substring(token.lemma().length()-len, token.lemma().length()),1.0);
+		
+		
+		
+		for(int j=i-1, count=window;count>0 && j>=0; count--,j--) {
+			CoreLabel current = sent.tokens.get(j); 
+			int len1 = current.lemma().length()>fixLen ? fixLen:current.lemma().length();
+			
+			map.put("WD#"+count+"_"+current.word(),1.0); 
+			map.put("LM#"+count+"_"+current.lemma(),1.0); 
+			map.put("PO#"+count+"_"+current.tag(),1.0); 
+			map.put("PA#"+count+"_"+LexicalPattern.pipe(current.word()), 1.0);
+			
+			map.put("PR#"+count+"_"+current.lemma().substring(0, len1),1.0);
+			map.put("SF#"+count+"_"+current.lemma().substring(current.lemma().length()-len1, current.lemma().length()),1.0);
+			
+			
 		}
-		for(int j=i+1, count=1;count>0 && j<sent.tokens.size(); count--,j++) {
-			map.put(sent.tokens.get(j).lemma().toLowerCase(),1.0); 
+		for(int j=i+1, count=window;count>0 && j<sent.tokens.size(); count--,j++) {
+			CoreLabel current = sent.tokens.get(j); 
+			int len1 = current.lemma().length()>fixLen ? fixLen:current.lemma().length();
+			
+			map.put("WD*"+count+"_"+current.word(),1.0); 
+			map.put("LM*"+count+"_"+current.lemma(),1.0); 
+			map.put("PO*"+count+"_"+current.tag(),1.0); 
+			map.put("PA*"+count+"_"+LexicalPattern.pipe(current.word()), 1.0);
+			
+			map.put("PR*"+count+"_"+current.lemma().substring(0, len1),1.0);
+			map.put("SF*"+count+"_"+current.lemma().substring(current.lemma().length()-len1, current.lemma().length()),1.0);
+			
+			
 		}
 		
-		map.put("#POS_"+token.tag(),1.0);
-		for(int j=i-1, count=1;count>0 && j>=0; count--,j--) {
-			map.put("#POS_"+sent.tokens.get(j).tag(),1.0); 
-		}
-		
-		int len = lemmaLow.length()>4 ? 4:lemmaLow.length();
-		map.put("#PREF_"+lemmaLow.substring(0, len),1.0);
-		map.put("#SUF_"+lemmaLow.substring(lemmaLow.length()-len, lemmaLow.length()),1.0);
-		
-		
-		map.put("#PTN_"+LexicalPattern.pipe(token.word()),1.0);
-		
-		String bc = tool.entityBC.getPrefix(lemmaLow);
-		map.put("#BNC_"+bc, 1.0);
-		
-		
-		String wc = tool.wcr.getCluster(lemmaLow);
-		map.put("#WC_"+wc, 1.0);
-		
+	
 		POS[] poses = {POS.NOUN, POS.ADJECTIVE};
 		for(POS pos:poses) {
-			ISynset synset = WordNetUtil.getMostSynset(tool.dict, lemmaLow, pos);
+			ISynset synset = WordNetUtil.getMostSynset(tool.dict, token.lemma(), pos);
 			if(synset!= null) {
-				map.put("#WN_"+synset.getID(),1.0);
+				map.put("WN_"+synset.getID().getOffset(),1.0);
 			} 
 
-			ISynset hypernym = WordNetUtil.getMostHypernym(tool.dict, lemmaLow, pos);
+			ISynset hypernym = WordNetUtil.getMostHypernym(tool.dict, token.lemma(), pos);
 			if(hypernym!= null) {
-				map.put("#WN_"+hypernym.getID(),1.0);
+				map.put("WN_"+hypernym.getID().getOffset(),1.0);
 			}
 		}
 		
+		String bc = tool.brown.getPrefix(token.lemma());
+		map.put("BN_"+bc, 1.0);
 		
 		
+		String wc = tool.wcr.getCluster(token.lemma());
+		map.put("WC_"+wc, 1.0);
+		
+		
+		if(tool.drugbank.contains(token.word())) {
+			map.put("DB_"+token.word(),1.0);
+		} else if(tool.drugbank.contains(token.lemma()))
+			map.put("DB_"+token.lemma(),1.0);
+		
+		if(tool.jochem.contains(token.word())) {
+			map.put("JC_"+token.word(),1.0);
+		} else if(tool.jochem.contains(token.lemma())) {
+			map.put("JC_"+token.lemma(),1.0);
+		}
+		
+		if(tool.ctdchem.contains(token.word())) {
+			map.put("CC_"+token.word(),1.0);
+		} else if(tool.ctdchem.contains(token.lemma()))
+			map.put("CC_"+token.lemma(),1.0);
+		
+		if(tool.chemElem.contains(token.word())) {
+			map.put("CE_"+token.word(),1.0);
+		} else if(tool.chemElem.contains(token.lemma())) {
+			map.put("CE_"+token.lemma(),1.0);
+		}
 		
 	}
 	
@@ -469,7 +436,8 @@ public class Main {
 	}
 	
 	// Given a bioc xml file and its instance data, get its entities. 
-	public static ArrayList<Entity> getEntities(BiocDocument document, InstanceList instanceData, CRF crf, Tool tool) throws Exception{
+	public static ArrayList<Entity> getEntities(BiocDocument document, InstanceList instanceData, CRF crf, 
+			Tool tool, boolean usePostProcess) throws Exception{
 		ArrayList<Entity> preEntities = new ArrayList<Entity>();
 		List<Sentence> sentences = preparePredictInfo(tool, document);
 		for(int m=0;m<sentences.size();m++) {
@@ -576,7 +544,8 @@ public class Main {
 						} 
 					}
 					// if the label is O, we use some rules to improve the recall
-					postprocessLocal(tokens, preOutput, k, tool, preEntities, document);
+					if(usePostProcess)
+						postprocessLocal(tokens, preOutput, k, tool, preEntities, document);
 				} 
 			
 			}
@@ -639,7 +608,7 @@ public class Main {
 				tool.chemElem.contains(token.word()) /*|| tool.chemElem.contains(token.lemma())*/
 				) &&
 				!tool.stopWord.contains(token.word())) {
-			System.out.println(token.word());
+			
 			preEntities.add(new Entity(document.id, "Chemical", token.beginPosition(), token.word(),null));
 			return;
 		} 

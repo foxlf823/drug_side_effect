@@ -42,7 +42,7 @@ public class LexicalPattern {
 			else if(CharCode.isNumber(chs[i]))
 				chs[i] = '0';
 			else
-				chs[i] = '_';
+				chs[i] = '*';
 		}
 		return new String(chs);
 	}

@@ -76,7 +76,7 @@ class EntityFeatures extends PerceptronFeatureFunction {
 				addFeature("E#SUF_"+lastSegment.type+"_"+hdLemmaLow.substring(hdLemmaLow.length()-len, hdLemmaLow.length()),1.0, status, y, map);
 				addFeature("E#HDPOS_"+lastSegment.type+"_"+head.tag(), 1.0, status, y, map);
 				
-				String bcHd = tool.entityBC.getPrefix(head.lemma());
+				String bcHd = tool.brown.getPrefix(head.lemma());
 				addFeature("E#HEADBC_"+lastSegment.type+"_"+bcHd, 1.0, status, y, map);
 				
 				
