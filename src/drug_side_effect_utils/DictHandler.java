@@ -50,7 +50,13 @@ public class DictHandler {
 		//buildDictHumanDO(true);
 		//buildJochem();
 		//buildCTDchem();
-		buildCTDmedic();
+		//buildCTDmedic();
+		
+		MEDI medi = new MEDI();
+		medi.load("F:/biomedical resource/MEDI/MEDI_01212013.csv");
+		System.out.println(medi.contains("Mesna", "Hemorrhage NOS"));
+		System.out.println(medi.contains("adasfd", "PrecurSor Cell Lymphoblastic Leukemia-Lymphoma"));
+		
 	}
 	
 	public static void buildCTDmedic() throws Exception {

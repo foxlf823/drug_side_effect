@@ -19,11 +19,11 @@ public abstract class PerceptronFeatureFunction implements Serializable{
 	 * x: the current input data.
 	 * status: the current status of perceptron.
 	 * y: the current predicted answer, and it may be a partial answer. 
-	 *    Moreover, it can be the gold answer as well.
 	 * other: any information or tools which are used in the feature functions.
 	 */
 	public void compute(PerceptronInputData x, PerceptronStatus status, PerceptronOutputData y, Object other, 
-			TObjectDoubleHashMap<String> map, ArrayList<PerceptronInputData> preInputs, ArrayList<PerceptronOutputData> preOutputs) {
+			TObjectDoubleHashMap<String> map, ArrayList<PerceptronInputData> preInputs, ArrayList<PerceptronOutputData> preOutputs,
+			PerceptronOutputData gold) {
 		return ;
 	}
 	

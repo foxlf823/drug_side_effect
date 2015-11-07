@@ -4,6 +4,7 @@ import gnu.trove.TIntArrayList;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashSet;
 
 import cn.fox.nlp.Sentence;
 
@@ -16,6 +17,8 @@ public class PerceptronInputData implements Serializable{
 	public Sentence sentInfo; // the information(pos, syntactic, dep) about the sentence which denotes this PerceptronInputData
 	public String id; // the id which document contains this sentence
 	public int sentIdx; // the sentence index
+
+	public HashSet<String> meshOfCoreChemical;
 	
 	public PerceptronInputData(String id, int sentIdx) {
 		tokens = new ArrayList<String>();

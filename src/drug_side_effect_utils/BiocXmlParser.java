@@ -185,6 +185,25 @@ ANNO:			for(int j=0;j<annotations.getLength();j++) {
 					}
 				}
 				
+				// for the corpus released on July 21st, 2015
+				NodeList relations = document.getElementsByTagName("relation");
+				for(int j=0;j<relations.getLength();j++) {
+					Element relation = (Element)relations.item(j);
+					String strAnnotationId = relation.getAttribute("id");
+					NodeList infons = relation.getElementsByTagName("infon");
+					
+					String strAnnotationRelation = infons.item(0).getFirstChild().getNodeValue();
+					Element infon1 = (Element)infons.item(1);
+					Element infon2 = (Element)infons.item(2);
+					String strAnnotationMesh1 = infon1.getFirstChild().getNodeValue();
+					String strAnnotationMesh2 = infon2.getFirstChild().getNodeValue();
+					Relation r = new Relation(strAnnotationId, strAnnotationRelation, strAnnotationMesh1, strAnnotationMesh2);
+					r.type1  = infon1.getAttribute("key");
+					r.type2 = infon2.getAttribute("key");
+					
+					biocDocument.relations.add(r);
+				}
+				
 				biocDocuments.add(biocDocument);
 			}
 			

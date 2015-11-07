@@ -11,6 +11,8 @@ import cn.fox.nlp.SentenceSplitter;
 import cn.fox.nlp.Word2Vec;
 import cn.fox.stanford.Tokenizer;
 import cn.fox.utils.StopWord;
+import deprecated.DescSaxHandler;
+import deprecated.SuppSaxHandler;
 import edu.mit.jwi.IDictionary;
 import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.parser.lexparser.LexicalizedParser;
@@ -37,7 +39,8 @@ public class Tool {
 	public Dictionary humando;
 	public Dictionary ctdmedic;
 	
-	
+	public CTDSaxParse ctdParse;
+	public MEDI medi;
 	
 	public DescSaxHandler desc;
 	public SuppSaxHandler supp;

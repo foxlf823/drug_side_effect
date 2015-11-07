@@ -15,160 +15,88 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 
-import cc.mallet.types.SparseVector;
 import cn.fox.biomedical.Sider;
-import cn.fox.machine_learning.BrownCluster;
 import cn.fox.nlp.Segment;
 import cn.fox.nlp.Sentence;
 import cn.fox.nlp.SentenceSplitter;
 import cn.fox.nlp.TokenizerWithSegment;
-import cn.fox.nlp.Word2Vec;
-import cn.fox.utils.Evaluater;
+import cn.fox.stanford.Tokenizer;
 import cn.fox.utils.IoUtils;
 import cn.fox.utils.ObjectSerializer;
-import cn.fox.utils.ObjectShuffle;
-import deprecated.RelationGold;
 import drug_side_effect_utils.BiocDocument;
 import drug_side_effect_utils.BiocXmlParser;
+import drug_side_effect_utils.CTDSaxParse;
 import drug_side_effect_utils.Entity;
 import drug_side_effect_utils.FileNameComparator;
-import drug_side_effect_utils.MeshDict;
-import drug_side_effect_utils.Relation;
+import drug_side_effect_utils.MEDI;
 import drug_side_effect_utils.RelationEntity;
 import drug_side_effect_utils.Tool;
-import drug_side_effect_utils.WordClusterReader;
-import edu.mit.jwi.IDictionary;
 import edu.stanford.nlp.ling.CoreLabel;
-import edu.stanford.nlp.parser.lexparser.LexicalizedParser;
 import edu.stanford.nlp.process.Morphology;
-import edu.stanford.nlp.semgraph.SemanticGraph;
 import edu.stanford.nlp.tagger.maxent.MaxentTagger;
-import edu.stanford.nlp.trees.GrammaticalStructure;
-import edu.stanford.nlp.trees.Tree;
-import edu.stanford.nlp.trees.TypedDependency;
-import gnu.trove.TIntArrayList;
-import gnu.trove.TObjectObjectProcedure;
+import edu.stanford.nlp.util.PropertiesUtils;
 
 public class CDRmain {
 
 	public static void main(String[] args) throws Exception {
-		FileInputStream fis = new FileInputStream(args[0]); // property file
+		// command line parameters
+		FileInputStream fis = new FileInputStream(args[0]); 
 		Properties properties = new Properties();
 		properties.load(fis);    
 		fis.close();
+		boolean preprocessTrain = Boolean.parseBoolean(args[1]);
+		boolean preprocessTest = Boolean.parseBoolean(args[2]);
+		boolean bTrain = Boolean.parseBoolean(args[3]);
+		
 
 		String train_xml = properties.getProperty("train_xml");
 		String dev_xml = properties.getProperty("dev_xml");
-		String sample_xml = properties.getProperty("sample_xml");
 		String bioc_dtd = properties.getProperty("bioc_dtd");
-		String common_english_abbr = properties.getProperty("common_english_abbr");
 		String train_instance_dir = properties.getProperty("train_instance_dir");
 		String test_instance_dir = properties.getProperty("test_instance_dir");
-		String pos_tagger = properties.getProperty("pos_tagger");
 		String perceptron_relation_ser = properties.getProperty("perceptron_relation_ser");
-		String group = properties.getProperty("group");
-		String group_err = properties.getProperty("group_err");
 		String test_result = properties.getProperty("test_result");
-		String brown_cluster_path = properties.getProperty("brown_cluster_path");
-		String sider_dict = properties.getProperty("sider_dict");
-		String wordnet_dict = properties.getProperty("wordnet_dict");
-		String vector = properties.getProperty("vector");
-		String vector_cluster = properties.getProperty("vector_cluster");
-		String train_dev_xml = properties.getProperty("train_dev_xml");
-		String group_10 = properties.getProperty("group_10");
-		String nvalid_instance_dir = properties.getProperty("nvalid_instance_dir");
-		String parser = properties.getProperty("parser");
-		String err_instance_dir = properties.getProperty("err_instance_dir");
-		String generated_bioc_xml = properties.getProperty("generated_bioc_xml");
 		
 		BiocXmlParser xmlParser = new BiocXmlParser(bioc_dtd, BiocXmlParser.ParseOption.BOTH);
-		SentenceSplitter sentSplit = new SentenceSplitter(new Character[]{';'}, false, common_english_abbr);
-		MaxentTagger tagger = new MaxentTagger(pos_tagger);
-		Morphology morphology = new Morphology();
-		BrownCluster entityBC = new BrownCluster(brown_cluster_path, 100);
-		Sider sider = new Sider(sider_dict);
-		IDictionary dict = new edu.mit.jwi.Dictionary(new URL("file", null, wordnet_dict));
-		dict.open();
-		Word2Vec w2v = new Word2Vec(vector);
-		WordClusterReader wcr = new WordClusterReader(vector_cluster);
-		LexicalizedParser lp = LexicalizedParser.loadModel(parser);
-		
+
 		Tool tool = new Tool();
-		tool.sentSplit = sentSplit;
-		tool.tagger = tagger;
-		tool.morphology = morphology;
-		tool.brown = entityBC;
-		tool.sider = sider;
-		tool.dict = dict;
-		tool.w2v = w2v;
-		tool.wcr = wcr;
-		tool.lp = lp;
+		tool.sentSplit = new SentenceSplitter(new Character[]{';'},false, PropertiesUtils.getString(properties, "common_english_abbr", ""));
+		tool.tokenizer = new Tokenizer(true, ' ');	
+		tool.tagger = new MaxentTagger(PropertiesUtils.getString(properties, "pos_tagger", ""));
+		tool.morphology = new Morphology();
+		tool.sider = new Sider(PropertiesUtils.getString(properties, "sider_dict", ""));
+		tool.ctdParse = new CTDSaxParse(PropertiesUtils.getString(properties, "ctd_chemical_disease", ""));
+		tool.medi = new MEDI();
+		tool.medi.load(PropertiesUtils.getString(properties, "medi_dict", ""));
+
+		int windowSize = PropertiesUtils.getInt(properties, "windowSize");
+		int beamSize = PropertiesUtils.getInt(properties, "beamSize");
+		int maxTrainTime = PropertiesUtils.getInt(properties, "maxTrainTime");
+		System.out.println("beam_size="+beamSize+", train_times="+maxTrainTime
+				+", windowSize="+windowSize);
+				
 		
-		// parameters
-		int windowSize = Integer.parseInt(args[1]); // window size
-		int beamSize = Integer.parseInt(args[2]); // beam size
-		int maxTrainTime = Integer.parseInt(args[3]);
-		double learningRate = Double.parseDouble(args[4]);
+		
+		fixedTrainAndTest(train_xml, dev_xml, xmlParser, tool, train_instance_dir, test_instance_dir, 
+				windowSize, beamSize, maxTrainTime, bioc_dtd, perceptron_relation_ser, test_result,
+				preprocessTrain, preprocessTest, bTrain);
 		
 		
-		fixedTrainAndTest(train_dev_xml, generated_bioc_xml, xmlParser, tool, train_instance_dir, test_instance_dir, 
-				windowSize, beamSize, maxTrainTime, learningRate, bioc_dtd, group, perceptron_relation_ser, test_result);
-		
-		//nValidate(train_dev_xml, xmlParser, tool, nvalid_instance_dir, windowSize, beamSize, maxTrainTime, learningRate, bioc_dtd, group_10);
 		
 	}
 	
-	// use the development documents in the group file as test set, use the training data as training set
 	public static void fixedTrainAndTest(String train_xml, String test_xml, BiocXmlParser xmlParser, Tool tool, 
-			String cdr_train_dir, String cdr_test_dir,
-			int windowSize, int beamSize, int maxTrainTime, double learningRate, String bioc_dtd, String group,
-			String perceptron_relation_ser, String test_result) 
-	throws Exception {
-		// begin to train and test
-		System.out.println("beam_size="+beamSize+", train_times="+maxTrainTime
-				+", windowSize="+windowSize+", learningRate="+learningRate);
-		
-		// set parameters here !!!!!!!!!!!!
-		boolean preprocess1 = true;
-		boolean preprocess2 = true;
-		boolean bTrain = true;
-		boolean debugFPFN = false;
-		
+			String cdr_train_dir, String cdr_test_dir, int windowSize, int beamSize, int maxTrainTime, 
+			String bioc_dtd, String perceptron_relation_ser, String test_result,
+			boolean preprocessTrain, boolean preprocessTest, boolean bTrain) throws Exception {
+
 		// preprocess train data
 		ArrayList<BiocDocument> trainDocs= xmlParser.parseBiocXmlFile(train_xml);
-		
-		if(preprocess1) {
+		if(preprocessTrain) {
 			preprocess(trainDocs, tool, cdr_train_dir, windowSize);
 		}
 		
-		// preprocess test data
-		BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(group), "utf-8"));
-		ArrayList<String> testDocIds = new ArrayList<>();
-		String thisLine = null;
-		while ((thisLine = br.readLine()) != null) {
-			if(thisLine.isEmpty())
-				continue;
-			testDocIds.add(thisLine);
-		}
-		br.close();
-		
-		ArrayList<BiocDocument> wholeTestDocs= xmlParser.parseBiocXmlFile(test_xml);
-		MeshDict meshDict = new MeshDict(test_xml, bioc_dtd);
-		tool.meshDict = meshDict;
-		
-		ArrayList<BiocDocument> testDocs = new ArrayList<>();
-		for(String id:testDocIds) {
-			testDocs.add(getBiocDocumentByID(id, wholeTestDocs));
-		}
-		
-		
-		if(preprocess2) {
-			preprocess(wholeTestDocs, tool, cdr_test_dir, windowSize);
-		}
-		
-		
 		// begin to train
-		
 		Perceptron perceptronRelation = null;
 		if(bTrain) {
 			File trainDataDir = new File(cdr_train_dir);
@@ -190,10 +118,8 @@ public class CDRmain {
 			
 			// create a relation perceptron
 			ArrayList<String> alphabetRelationType = new ArrayList<String>(Arrays.asList("CID"));
-			perceptronRelation = new Perceptron(alphabetRelationType, -1, -1);
+			perceptronRelation = new Perceptron(alphabetRelationType);
 			perceptronRelation.setWindowSize(windowSize);
-			perceptronRelation.learningRate = learningRate;
-			perceptronRelation.average = false;
 			ArrayList<PerceptronFeatureFunction> featureFunctions2 = new ArrayList<PerceptronFeatureFunction>(
 					Arrays.asList(new RelationFeatures(perceptronRelation)));
 			perceptronRelation.setFeatureFunction(null, featureFunctions2);
@@ -207,16 +133,17 @@ public class CDRmain {
 			perceptronRelation = (Perceptron)ObjectSerializer.readObjectFromFile(perceptron_relation_ser);
 		}
 			
-		
-		int countPredictMesh = 0;
-		int countTrueMesh = 0;
-		int countCorrectMesh = 0;
+		// preprocess test data
+		ArrayList<BiocDocument> testDocs = xmlParser.parseBiocXmlFile(test_xml);
+		if(preprocessTest) {
+			preprocess(testDocs, tool, cdr_test_dir, windowSize);
+		}
+				
 		
 		OutputStreamWriter testResultFile = new OutputStreamWriter(new FileOutputStream(test_result), "utf-8");
 		File testDataDir = new File(cdr_test_dir);
 		for(File dir:testDataDir.listFiles()) {
-			if(getBiocDocumentByID(dir.getName(), testDocs)==null)
-				continue;
+			
 			ArrayList<PerceptronInputData> inputDatas = new ArrayList<PerceptronInputData>();
 			ArrayList<PerceptronOutputData> goldDatas = new ArrayList<>();
 			List<File> files = Arrays.asList(dir.listFiles());
@@ -255,276 +182,54 @@ public class CDRmain {
 			}
 			
 			// for each entity in the RelationEntity, give it a mesh id
-			// if we cannot find id, delete this re
+			// if we cannot find id, delete this relation
 			ArrayList<RelationEntity> toBeDeletedRelation = new ArrayList<>();
 			for(RelationEntity re:preRelationEntitys) {
-				String mesh1 = tool.meshDict.getMesh(re.entity1.text);
-				if(mesh1.equals("-1"))
+				if(re.entity1.mesh.equals("-1"))
 					toBeDeletedRelation.add(re); 
-				else {
-					re.entity1.mesh = mesh1;
-				}
+				if(re.entity2.mesh.equals("-1"))
+					toBeDeletedRelation.add(re); 
 				
-				String mesh2 = tool.meshDict.getMesh(re.entity2.text);
-				if(mesh2.equals("-1"))
-					toBeDeletedRelation.add(re); 
-				else {
-					re.entity2.mesh = mesh2;
-				}
 			}
 			for(RelationEntity re: toBeDeletedRelation) {
 				preRelationEntitys.remove(re);
 			}
-			// now we can make relations with mesh id, and get rid of the overlapped
-			HashSet<Relation> predictRelations = new HashSet<Relation>();
-			for(RelationEntity predict:preRelationEntitys) {
-				Relation r = new Relation(null, "CID", predict.entity1.mesh, predict.entity2.mesh);
-				if(!predictRelations.contains(r))
-					predictRelations.add(r);
-				
-			}
-			
-			// debug FP and FN
-			if(debugFPFN) {
-				System.out.println(dir.getName());
-				System.out.println("FP");
-				for(RelationEntity predict:preRelationEntitys) {
-					Relation r = new Relation(null, "CID", predict.entity1.mesh, predict.entity2.mesh);
-					if(!getBiocDocumentByID(dir.getName(), testDocs).relations.contains(r)) { // FP
-						System.out.println(predict.entity1+" && "+predict.entity2);
-					} 
-				}
-				System.out.println("FN");
-				for(Relation r:getBiocDocumentByID(dir.getName(), testDocs).relations) {
-					if(!predictRelations.contains(r)) // FN
-						System.out.println(r.mesh1+" && "+r.mesh2);
-				}
-				
-			}
-			
 			// we output all the relations and evaluate them with official tools
-			for(Relation predict:predictRelations) {
+			for(RelationEntity predict:preRelationEntitys) {
 				String line = dir.getName();
 				line += "\t";
 				line += "CID";
 				line += "\t";
-				line += predict.mesh1;
+				line += predict.getChemical().mesh;
 				line += "\t";
-				line += predict.mesh2; 
+				line += predict.getDisease().mesh; 
 				line +="\n";
 				testResultFile.write(line);
 			}
 			
-			// we evaluate by ourselves
-			countPredictMesh += predictRelations.size();
-			countTrueMesh += getBiocDocumentByID(dir.getName(), wholeTestDocs).relations.size();
-			predictRelations.retainAll(getBiocDocumentByID(dir.getName(), wholeTestDocs).relations);
-			countCorrectMesh += predictRelations.size();
+			
 			
 		}
 		
 		testResultFile.close();
 		
-		double precisionMesh = Evaluater.getPrecisionV2(countCorrectMesh, countPredictMesh);
-		double recallMesh  = Evaluater.getRecallV2(countCorrectMesh, countTrueMesh);
-		double f1Mesh = Evaluater.getFMeasure(precisionMesh, recallMesh, 1);
-		System.out.println(precisionMesh+"\t"+recallMesh+"\t"+f1Mesh); 
-			
-			
+		
 	}
 	
-		
-	// use training and development data to perform 10-fold cross-validation
-	public static void nValidate(String train_dev_xml, BiocXmlParser xmlParser, Tool tool, String nvalid_instance_dir
-			, int windowSize, int beamSize, int maxTrainTime, double learningRate, String bioc_dtd, String group) 
-	throws Exception {
-		// begin to train and test
-		System.out.println("beam_size="+beamSize+", train_times="+maxTrainTime
-				+", windowSize="+windowSize+", learningRate="+learningRate);
-		ArrayList<BiocDocument> docs= xmlParser.parseBiocXmlFile(train_dev_xml);
-		boolean preprocess = true;
-		if(preprocess) {
-			preprocess(docs, tool, nvalid_instance_dir, windowSize);
-		}
-		
-		
-		List<List> splitted = new ArrayList<>();	
-		BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(group), "utf-8"));
-		String thisLine = null;
-		List<File> groupFile = new ArrayList<File>();
-		int groupCount=0;
-		while ((thisLine = br.readLine()) != null) {
-			if(thisLine.isEmpty()) {
-				splitted.add(groupFile);
-				groupCount++;
-				groupFile = new ArrayList<File>();
-			} else
-				groupFile.add(new File(nvalid_instance_dir+"/"+thisLine));
-		}
-		//splitted.add(groupFile);
-		br.close();
-		
-		// we need the test doc as gold answers
-		HashMap<String, BiocDocument> goldAnswers = new HashMap<String, BiocDocument>();
-		for(BiocDocument doc:docs) {
-			goldAnswers.put(doc.id, doc);
-		}
-		MeshDict meshDict = new MeshDict(train_dev_xml, bioc_dtd);
-		tool.meshDict = meshDict;
-		
-		double sumPrecisionMesh = 0;
-		double sumRecallMesh = 0;
-		double sumF1Mesh = 0;
-		
-		for(int ctFold=1;ctFold<=splitted.size();ctFold++) { // for each fold
-			List<File> trainDataDir = new ArrayList<File>();
-			List<File> testDataDir = new ArrayList<File>();
-			
-			for(int j=0;j<splitted.size();j++) {
-				if(j==ctFold-1) {
-					for(int k=0;k<splitted.get(j).size();k++)
-						testDataDir.add((File)splitted.get(j).get(k));
-				} else {
-					for(int k=0;k<splitted.get(j).size();k++)
-						trainDataDir.add((File)splitted.get(j).get(k));
-				}
-			}
 
-			ArrayList<PerceptronInputData> trainInputDatas = new ArrayList<PerceptronInputData>();
-			ArrayList<PerceptronOutputData> trainOutputDatas = new ArrayList<PerceptronOutputData>();
-			for(File dir:trainDataDir) {
-				// add all the instances in this dir considering the order
-				List<File> filesPerDir = Arrays.asList(dir.listFiles());
-				Collections.sort(filesPerDir, new FileNameComparator());
-				for(File file:filesPerDir) {
-					if(file.getName().indexOf("input") != -1) {
-						trainInputDatas.add((PerceptronInputData)ObjectSerializer.readObjectFromFile(file.getAbsolutePath()));
-					} else {
-						trainOutputDatas.add((PerceptronOutputData)ObjectSerializer.readObjectFromFile(file.getAbsolutePath()));
-					}
-				}
-			}
-			
-			// create a relation perceptron
-			ArrayList<String> alphabetRelationType = new ArrayList<String>(Arrays.asList("CID"));
-			Perceptron perceptronRelation = new Perceptron(alphabetRelationType, -1, -1);
-			perceptronRelation.setWindowSize(windowSize);
-			perceptronRelation.learningRate = learningRate;
-			perceptronRelation.average = false;
-			ArrayList<PerceptronFeatureFunction> featureFunctions2 = new ArrayList<PerceptronFeatureFunction>(
-					Arrays.asList(new RelationFeatures(perceptronRelation)));
-			perceptronRelation.setFeatureFunction(null, featureFunctions2);
-			perceptronRelation.buildFeatureAlphabet(trainInputDatas, trainOutputDatas, tool);
-			System.out.println("begin to train perceptronRelation, features "+perceptronRelation.featureAlphabet.size());
-			
-			perceptronRelation.trainPerceptron(maxTrainTime, beamSize, trainInputDatas, trainOutputDatas, tool);
-			
-			int countPredictMesh = 0;
-			int countTrueMesh = 0;
-			int countCorrectMesh = 0;
-			
-			for(File dir:testDataDir) {
-				ArrayList<PerceptronInputData> inputDatas = new ArrayList<PerceptronInputData>();
-				ArrayList<PerceptronOutputData> goldDatas = new ArrayList<>();
-				List<File> files = Arrays.asList(dir.listFiles());
-				Collections.sort(files, new FileNameComparator());
-				for(File file:files) {
-					if(file.getName().indexOf("input") != -1) {
-						inputDatas.add((PerceptronInputData)ObjectSerializer.readObjectFromFile(file.getAbsolutePath()));
-					} else {
-						goldDatas.add((PerceptronOutputData)ObjectSerializer.readObjectFromFile(file.getAbsolutePath()));
-					}
-				}
-				// predict
-				ArrayList<RelationEntity> preRelationEntitys = new ArrayList<RelationEntity>();
-				for(int i=0;i<inputDatas.size();i++) {
-					PerceptronInputData inputdata = inputDatas.get(i);
-					PerceptronOutputData goldData = goldDatas.get(i); // we need entities of gold entities
-					
-					// prepare the window, we assume the data is ordered
-					ArrayList<PerceptronInputData> preInputs = new ArrayList<PerceptronInputData>();
-					ArrayList<PerceptronOutputData> preOutputs = new ArrayList<PerceptronOutputData>();
-					for(int k=0;k<windowSize;k++) {
-						int index = i-windowSize+k;
-						if(index<0) continue;
-						// if the previous sentence and current sentence are not in the same document, ignore it
-						if(!inputDatas.get(index).id.equals(inputdata.id))
-							continue;
-						
-						preInputs.add(inputDatas.get(index));
-						preOutputs.add(goldDatas.get(index));
-					}
-					
-					PerceptronStatus returnType = perceptronRelation.beamSearch((PerceptronInputData)inputdata, goldData, false, beamSize, tool, preInputs, preOutputs);
-					PerceptronOutputData output = returnType.z;
-									
-					preRelationEntitys.addAll(output.relations);
-				}
-				
-				// for each entity in the RelationEntity, give it a mesh id
-				// if we cannot find id, delete this re
-				ArrayList<RelationEntity> toBeDeletedRelation = new ArrayList<>();
-				for(RelationEntity re:preRelationEntitys) {
-					String mesh1 = tool.meshDict.getMesh(re.entity1.text);
-					if(mesh1.equals("-1"))
-						toBeDeletedRelation.add(re); 
-					else {
-						re.entity1.mesh = mesh1;
-					}
-					
-					String mesh2 = tool.meshDict.getMesh(re.entity2.text);
-					if(mesh2.equals("-1"))
-						toBeDeletedRelation.add(re); 
-					else {
-						re.entity2.mesh = mesh2;
-					}
-				}
-				for(RelationEntity re: toBeDeletedRelation) {
-					preRelationEntitys.remove(re);
-				}
-				// now we can make relations with mesh id, and get rid of the overlapped
-				HashSet<Relation> predictRelations = new HashSet<Relation>();
-				for(RelationEntity predict:preRelationEntitys) {
-					Relation r = new Relation(null, "CID", predict.entity1.mesh, predict.entity2.mesh);
-					if(!predictRelations.contains(r))
-						predictRelations.add(r);
-					
-				}
-				
-				// we evaluate by ourselves
-				countPredictMesh += predictRelations.size();
-				countTrueMesh += goldAnswers.get(dir.getName()).relations.size();
-				predictRelations.retainAll(goldAnswers.get(dir.getName()).relations);
-				countCorrectMesh += predictRelations.size();
-				
-			}
-			
-			double precisionMesh = Evaluater.getPrecisionV2(countCorrectMesh, countPredictMesh);
-			double recallMesh  = Evaluater.getRecallV2(countCorrectMesh, countTrueMesh);
-			double f1Mesh = Evaluater.getFMeasure(precisionMesh, recallMesh, 1);
-			System.out.println(precisionMesh+"\t"+recallMesh+"\t"+f1Mesh); 
-			
-			sumPrecisionMesh += precisionMesh;
-			sumRecallMesh += recallMesh;
-			sumF1Mesh += f1Mesh;
-		}
-		
-		System.out.println("The macro average of p,r,f1 are "+sumPrecisionMesh/splitted.size()+"\t"+
-		sumRecallMesh/splitted.size()+"\t"+Evaluater.getFMeasure(sumPrecisionMesh/splitted.size(), sumRecallMesh/splitted.size(), 1)); 
-	}
-	
-	
-	
 	public static void preprocess(ArrayList<BiocDocument> docs, Tool tool, String instance_dir, int windowSize) throws Exception {
 		File fInstanceDir = new File(instance_dir);
 		IoUtils.clearDirectory(fInstanceDir);
 		
 		for(BiocDocument doc:docs) {
+			doc.fillCoreChemical();
+			/*if(doc.id.equals("10091617"))
+				System.out.println();*/
 			ArrayList<PerceptronInputData> inputDatas = new ArrayList<PerceptronInputData>();
 			ArrayList<PerceptronOutputData> outputDatas = new ArrayList<PerceptronOutputData>();
 							
 			List<Sentence> mySentences = prepareNlpInfo(doc, tool);
-			buildInputData(inputDatas, mySentences, doc.id);
+			buildInputData(inputDatas, mySentences, doc);
 			buildGoldOutputData(doc, outputDatas, mySentences, windowSize, doc.id);
 			
 			File documentDir = new File(instance_dir+"/"+doc.id);
@@ -532,7 +237,11 @@ public class CDRmain {
 			for(int k=0;k<inputDatas.size();k++) {
 				ObjectSerializer.writeObjectToFile(inputDatas.get(k), documentDir+"/"+k+".input");
 				ObjectSerializer.writeObjectToFile(outputDatas.get(k), documentDir+"/"+k+".output");
+				/*PerceptronOutputData data = (PerceptronOutputData)ObjectSerializer.readObjectFromFile(documentDir+"/"+k+".output");
+				if(data.meshOfCoreChemical==null || data.meshOfCoreChemical.size()==0)
+					System.out.println();*/
 			}
+			
 		}
 	}
 
@@ -566,15 +275,9 @@ public class CDRmain {
 			// lemma
 			for(int i=0;i<tokens.size();i++)
 				tool.morphology.stem(tokens.get(i));
-			// parsing
-			/*Tree root = tool.lp.apply(tokens);
-			root.indexLeaves();
-			root.setSpans();
-			List<Tree> leaves = root.getLeaves();*/
+
 			
 			mySentence.tokens = tokens;
-			/*mySentence.root = root;
-			mySentence.leaves = leaves;*/
 			mySentences.add(mySentence);
 			
 			offset += sentenceLength;
@@ -584,11 +287,11 @@ public class CDRmain {
 		return mySentences;
 	}
 	
-	public static void buildInputData(ArrayList<PerceptronInputData> inputDatas,List<Sentence> mySentences, String id) {
+	public static void buildInputData(ArrayList<PerceptronInputData> inputDatas,List<Sentence> mySentences, BiocDocument doc) {
 		// build input data
 		for(int j=0;j<mySentences.size();j++) {
 			Sentence mySentence = mySentences.get(j);
-			PerceptronInputData inputdata = new PerceptronInputData(id, j);
+			PerceptronInputData inputdata = new PerceptronInputData(doc.id, j);
 			for(int i=0;i<mySentence.tokens.size();i++) {
 				CoreLabel token = mySentence.tokens.get(i);
 				// build input data
@@ -596,6 +299,7 @@ public class CDRmain {
 				inputdata.offset.add(token.beginPosition());
 			}
 			inputdata.sentInfo = mySentence;
+			inputdata.meshOfCoreChemical = doc.meshOfCoreChemical;
 			inputDatas.add(inputdata);
 		}
 	}
@@ -703,7 +407,7 @@ public class CDRmain {
 				}
 			}
 			// build the relations of output data end
-
+			
 			outDatas.add(outputdata);
 			
 			

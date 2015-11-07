@@ -36,6 +36,14 @@ public class RelationEntity implements Serializable{
 		return latter;
 	}
 	
+	public Entity getChemical() {
+		return entity1.type.equals("Chemical") ? entity1:entity2;
+	}
+	
+	public Entity getDisease() {
+		return entity1.type.equals("Chemical") ? entity2:entity1;
+	}
+	
 	/*
 	 * equals and hashCode make sure that the relation is non-directed.
 	 */

@@ -7,5 +7,6 @@
 	<classpathentry kind="lib" path="D:/tools/edu.mit.jwi_2.3.3_all/edu.mit.jwi_2.3.3_jdk.jar"/>
 	<classpathentry kind="lib" path="D:/stanford/stanford-corenlp-full-2014-06-16/stanford-corenlp-3.4.jar"/>
 	<classpathentry kind="lib" path="F:/eclipse-4.5/workspace/FoxNlpToolKit.jar"/>
+	<classpathentry kind="lib" path="D:/tools/svm_light/JNI_SVM-light-6.01-64bit/lib/jnisvmlight.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

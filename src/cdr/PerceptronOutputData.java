@@ -45,6 +45,7 @@ public class PerceptronOutputData implements Serializable{
 	public String id; // the id which document contains this sentence
 	public int sentIdx; // the sentence index
 	
+	
 	public PerceptronOutputData(boolean isGold, String id, int sentIdx) {
 		this.isGold = isGold;
 		

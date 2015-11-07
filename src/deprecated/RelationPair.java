@@ -1,4 +1,4 @@
-package drug_side_effect_utils;
+package deprecated;
 
 public class RelationPair {
 	String p1;

@@ -1,4 +1,4 @@
-package drug_side_effect_utils;
+package deprecated;
 
 import java.util.HashMap;
 
@@ -13,8 +13,8 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import cn.fox.utils.DTDEntityResolver;
 
-public class DescSaxHandler extends DefaultHandler {
-	int maxNumOfWordPerEntry; // The entry whose numbers of words > this will be ignored
+public class SuppSaxHandler extends DefaultHandler {
+	int maxNumOfWordPerEntry; // The entry( whose numbers of words > this will be ignored)
 	UiNamePair current;
 	String lastElement;
 	String dtdPath;
@@ -23,24 +23,13 @@ public class DescSaxHandler extends DefaultHandler {
 	class UiNamePair {
 		String ui;
 		String name;
+		
 	}
-	public DescSaxHandler(int maxNumOfWordPerEntry, String dtdPath, String xmlPath) {
+	public SuppSaxHandler(int maxNumOfWordPerEntry, String dtdPath, String xmlPath) {
 		this.maxNumOfWordPerEntry = maxNumOfWordPerEntry;
 		this.dtdPath = dtdPath;
 		this.xmlPath = xmlPath;
 	}
-	
-	public void read() throws Exception {
-		
-		SAXParserFactory factory = SAXParserFactory.newInstance();  
-        SAXParser parser = factory.newSAXParser();  
-        XMLReader reader = parser.getXMLReader();
-        reader.setEntityResolver(new DTDEntityResolver(dtdPath));  
-        reader.setContentHandler(this);  
-        reader.parse(new InputSource(xmlPath)); 
-
-	}
-	
 	// ignore case
 	public boolean matchWholeEntry(String s) {
 		return dict.containsValue(s.toLowerCase());
@@ -57,6 +46,16 @@ public class DescSaxHandler extends DefaultHandler {
 		return false;
 	}
 	
+	public void read() throws Exception {
+
+		SAXParserFactory factory = SAXParserFactory.newInstance();  
+        SAXParser parser = factory.newSAXParser();  
+        XMLReader reader = parser.getXMLReader();
+        reader.setEntityResolver(new DTDEntityResolver(dtdPath));  
+        reader.setContentHandler(this);  
+        reader.parse(new InputSource(xmlPath)); 
+	}
+	
 	@Override
 	public void startDocument() throws SAXException {
 		dict = new HashMap<String, String>();
@@ -65,7 +64,7 @@ public class DescSaxHandler extends DefaultHandler {
 	@Override
 	public void startElement(String uri, String localName, String qName,
 			Attributes attributes) throws SAXException {
-		if(qName.equals("DescriptorRecord")) {
+		if(qName.equals("SupplementalRecord")) {
 			current = new UiNamePair();
 		}	
 		lastElement = qName;
@@ -74,7 +73,7 @@ public class DescSaxHandler extends DefaultHandler {
 	@Override
 	public void characters(char[] ch, int start, int length)
 			throws SAXException {
-		if(lastElement.equals("DescriptorUI"))
+		if(lastElement.equals("SupplementalRecordUI"))
 			current.ui = new String(ch, start, length);
 		else if (lastElement.equals("String"))
 			current.name = new String(ch, start, length);
@@ -84,7 +83,7 @@ public class DescSaxHandler extends DefaultHandler {
 	@Override
 	public void endElement(String uri, String localName, String qName)
 			throws SAXException {
-		if(qName.equals("DescriptorRecord") &&  current.name.split(" ++").length<=maxNumOfWordPerEntry) {
+		if(qName.equals("SupplementalRecord") &&  current.name.split(" ++").length<=maxNumOfWordPerEntry) {
 			/*current.name = current.name.replaceAll("-", " ");
 			current.name = current.name.replaceAll(",", "");*/
 			dict.put(current.ui, current.name.trim().toLowerCase());

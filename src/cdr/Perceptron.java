@@ -30,8 +30,6 @@ public class Perceptron implements Serializable{
 	public TObjectIntHashMap<String> featureAlphabet; // store the feature name and its index in the feature vector
 	public boolean isAlphabetStop; // when training finished, set this true
 	
-	public float convergeThreshold;
-	public double weightMax;
 	
 	public double learningRate = 1;
 	
@@ -68,7 +66,7 @@ public class Perceptron implements Serializable{
 					if(segment.type.equals(EMPTY) && j!=outputDatas.get(i).segments.size()-1)
 						continue;
 					PerceptronStatus status = new PerceptronStatus(null, segment.end, 0); // we define this step is 0.
-					FReturnType ret = f(inputDatas.get(i), status, outputDatas.get(i), other, preInputs, preOutputs);
+					FReturnType ret = f(inputDatas.get(i), status, outputDatas.get(i), other, preInputs, preOutputs, outputDatas.get(i));
 				}
 			}
 			
@@ -142,48 +140,9 @@ public class Perceptron implements Serializable{
 				}
 				
 				
-				kBest(x, statusKBest1, beam, buf, beamSize, other, preInputs, preOutputs);
+				kBest(x, statusKBest1, beam, buf, beamSize, other, preInputs, preOutputs, y);
 				
 			}
-
-			// rule 1: if an entity occurred in an inner-sentence relation, it may not occur in the inter-sentence
-			if(preOutputs.size()>0) {
-		    
-				/*int countNumber = 0;
-				for(int yy=0;yy<beam.size();yy++) { // !!! this is only right when beam==1
-					PerceptronOutputData yInBeam = beam.get(yy);
-					for(RelationEntity re: yInBeam.relations) {
-						if(segmentCurrent.equals(re.entity1) || segmentCurrent.equals(re.entity2)) {
-							countNumber++;
-						}
-					}
-				}*/
-				// use sigmoid probability
-				/*double prob = 1-Normalizer.doSigmoid(countNumber); 
-				double randomNumber = rnd.nextDouble();
-				if(randomNumber < prob) {
-					
-				} else { 
-					continue;
-				}*/
-				
-				// use fixed probability
-				/*if(countNumber>0) 
-					continue;*/
-				
-				// use 1/(1+x) probability
-				/*double prob = 1.0/(countNumber+1); 
-				double randomNumber = rnd.nextDouble();
-				if(randomNumber < prob) {
-					
-				} else { 
-					continue;
-				}*/
-				
-				
-			
-			}
-			
 
 			// predict the relation between entities of the current sentence and previous sentences
 			for(int w=preOutputs.size()-1;w>=0;w--) {
@@ -229,7 +188,7 @@ public class Perceptron implements Serializable{
 					}
 					
 					
-					kBest(x, statusKBest1, beam, buf, beamSize, other, preInputs, preOutputs);
+					kBest(x, statusKBest1, beam, buf, beamSize, other, preInputs, preOutputs, y);
 					
 				}
 				
@@ -261,7 +220,7 @@ public class Perceptron implements Serializable{
 	}
 	
 		
-	public Perceptron(ArrayList<String> alphabet2, float convergeThreshold, double weightMax) {
+	public Perceptron(ArrayList<String> alphabet2) {
 		
 		if(alphabet2!=null) {
 			this.alphabet2 = new ArrayList<String>();
@@ -272,8 +231,6 @@ public class Perceptron implements Serializable{
 		
 		this.featureAlphabet = new TObjectIntHashMap<>();
 		
-		this.convergeThreshold = convergeThreshold;
-		this.weightMax = weightMax;
 		
 	}
 	
@@ -328,8 +285,8 @@ public class Perceptron implements Serializable{
 				
 				if(status.step==2) {
 					// it's return by early-update
-					FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs);
-					FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs);
+					FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs, y);
+					FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs, y);
 					
 												
 					SparseVector fxy2  = rtFxy.sv2;
@@ -339,8 +296,8 @@ public class Perceptron implements Serializable{
 					
 				} else if(status.step==3 && !status.z.isIdenticalWith(x, y, status)) {
 					// if the predicted answer are not identical to the gold answer, update the model.
-					FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs);
-					FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs);
+					FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs, y);
+					FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs, y);
 					
 												
 					SparseVector fxy2  = rtFxy.sv2;
@@ -390,8 +347,8 @@ public class Perceptron implements Serializable{
 					
 					if(status.step==2) {
 						// it's return by early-update
-						FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs);
-						FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs);
+						FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs, y);
+						FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs, y);
 						
 													
 						SparseVector fxy2  = rtFxy.sv2;
@@ -401,8 +358,8 @@ public class Perceptron implements Serializable{
 						
 					} else if(status.step==3 && !status.z.isIdenticalWith(x, y, status)) {
 						// if the predicted answer are not identical to the gold answer, update the model.
-						FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs);
-						FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs);
+						FReturnType rtFxy = f(x, status, y, other, preInputs, preOutputs, y);
+						FReturnType rtFxz = f(x, status, status.z, other, preInputs, preOutputs, y);
 						
 													
 						SparseVector fxy2  = rtFxy.sv2;
@@ -434,11 +391,11 @@ public class Perceptron implements Serializable{
 	
 	
 	public void kBest(PerceptronInputData x, PerceptronStatus status, ArrayList<PerceptronOutputData> beam, ArrayList<PerceptronOutputData> buf, int beamSize, Object other,
-			ArrayList<PerceptronInputData> preInputs, ArrayList<PerceptronOutputData> preOutputs)throws Exception {
+			ArrayList<PerceptronInputData> preInputs, ArrayList<PerceptronOutputData> preOutputs, PerceptronOutputData gold)throws Exception {
 		// compute all the scores in the buf
 		TDoubleArrayList scores = new TDoubleArrayList();
 		for(PerceptronOutputData y:buf) {
-			FReturnType ret = f(x,status,y, other, preInputs, preOutputs);
+			FReturnType ret = f(x,status,y, other, preInputs, preOutputs, gold);
 			if(status.step==2) {
 				scores.add(w2.dotProduct(ret.sv2));
 			} else 
@@ -486,7 +443,8 @@ public class Perceptron implements Serializable{
 	}
 	
 	protected FReturnType f(PerceptronInputData x, PerceptronStatus status, PerceptronOutputData y, Object other,
-			ArrayList<PerceptronInputData> preInputs, ArrayList<PerceptronOutputData> preOutputs) throws Exception {	
+			ArrayList<PerceptronInputData> preInputs, ArrayList<PerceptronOutputData> preOutputs,
+			PerceptronOutputData gold) throws Exception {	
 		
 		if(y.isGold) {
 			if(status.step==0) { // initialize the feature vectors of gold output
@@ -494,7 +452,7 @@ public class Perceptron implements Serializable{
 				TObjectDoubleHashMap<String> map2 = new TObjectDoubleHashMap<>();
 				for(int j=0;j<featureFunctions2.size();j++) {
 					PerceptronFeatureFunction featureFunction = featureFunctions2.get(j);
-					featureFunction.compute(x, status, y, other, map2, preInputs, preOutputs);
+					featureFunction.compute(x, status, y, other, map2, preInputs, preOutputs, gold);
 				}
 				y.featureVectors2.put(status.tokenIndex,hashMapToSparseVector(map2));
 				return new FReturnType(null, y.featureVectors2.get(status.tokenIndex));
@@ -511,7 +469,7 @@ public class Perceptron implements Serializable{
 				TObjectDoubleHashMap<String> map = new TObjectDoubleHashMap<>();
 				for(int j=0;j<featureFunctions2.size();j++) {
 					PerceptronFeatureFunction featureFunction = featureFunctions2.get(j);
-					featureFunction.compute(x, status, y, other, map, preInputs, preOutputs);
+					featureFunction.compute(x, status, y, other, map, preInputs, preOutputs, gold);
 				}
 				y.featureVector2 = hashMapToSparseVector(map);
 				return new FReturnType(null, y.featureVector2);
@@ -520,7 +478,7 @@ public class Perceptron implements Serializable{
 				TObjectDoubleHashMap<String> map2 = new TObjectDoubleHashMap<>();
 				for(int j=0;j<featureFunctions2.size();j++) {
 					PerceptronFeatureFunction featureFunction = featureFunctions2.get(j);
-					featureFunction.compute(x, status, y, other, map2, preInputs, preOutputs);
+					featureFunction.compute(x, status, y, other, map2, preInputs, preOutputs, gold);
 				}
 				y.featureVector2 = hashMapToSparseVector(map2);
 				return new FReturnType(null, y.featureVector2);

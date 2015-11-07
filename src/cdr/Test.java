@@ -25,7 +25,9 @@ import cn.fox.nlp.SentenceSplitter;
 import cn.fox.nlp.TokenizerWithSegment;
 import cn.fox.nlp.Word2Vec;
 import cn.fox.nlp.WordVector;
+import cn.fox.stanford.Tokenizer;
 import cn.fox.utils.IoUtils;
+import cn.fox.utils.ObjectSerializer;
 import cn.fox.utils.ObjectShuffle;
 import drug_side_effect_utils.BiocDocument;
 import drug_side_effect_utils.BiocXmlParser;
@@ -65,12 +67,31 @@ public class Test {
 		tool.sentSplit = sentSplit;
 		tool.tagger = tagger;
 		tool.morphology = morphology;
+		tool.tokenizer = new Tokenizer(true, ' ');	
 		
-		ArrayList<BiocDocument> trainDoc = xmlParser.parseBiocXmlFile(train_xml);
 		
-		ArrayList<BiocDocument> devDoc = xmlParser.parseBiocXmlFile(dev_xml);
+		OutputStreamWriter osw1 = new OutputStreamWriter(new FileOutputStream("E:/biocreative2015/word2vec_corpus_train.txt"), "utf-8");
+		ArrayList<BiocDocument> trainDocs = xmlParser.parseBiocXmlFile(train_xml);
+		for(BiocDocument doc:trainDocs) {
+	    	String content = doc.title+" "+doc.abstractt;
+			
+			List<String> strSentences = tool.sentSplit.splitWithFilters(content);
+			int offset = 0;
+			for(String temp:strSentences) {
+				ArrayList<CoreLabel> tokens = tool.tokenizer.tokenize(offset, temp);
+				for(CoreLabel token: tokens) {
+					osw1.write(token.word().toLowerCase()+" ");
+					
+				}
+				offset += temp.length();
+				osw1.write("\n");
+			}
+		}
+		osw1.close();
+		
+		//ArrayList<BiocDocument> devDoc = xmlParser.parseBiocXmlFile(dev_xml);
 		//count1(trainDoc, tool);
-		count1(devDoc, tool);
+		//count1(devDoc, tool);
 		
 		// we randomly divide development set into two group, and one for developing, one for testing
 		//makeGroupFile(dev_xml, xmlParser, 2, group);
@@ -83,7 +104,7 @@ public class Test {
 		
 		//makeBrownClusterData(devDoc, "E:/biocreative2015/brown_corpus_bc5cdr.txt", tool);
 		
-		makeW2VCluster(vector, "E:/biocreative2015/w2v_cluster.txt");
+		//makeW2VCluster(vector, "E:/biocreative2015/w2v_cluster.txt");
 		
 		/*{
 			HashSet<String> groupIds = new HashSet<>();
