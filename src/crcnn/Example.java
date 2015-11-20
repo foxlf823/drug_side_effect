@@ -10,8 +10,11 @@ public class Example {
 	// TIntArrayList denotes all the word IDs in a sentence.
 	List<TIntArrayList> featureIDs;
 	int label; // 0-not CID, 1-CID 
+	String drugMesh;
+	String diseaseMesh;
 	
-	public Example() {
-		
+	public Example(String drugMesh, String diseaseMesh) {
+		this.drugMesh = drugMesh;
+		this.diseaseMesh = diseaseMesh;
 	}
 }

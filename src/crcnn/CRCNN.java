@@ -1,12 +1,13 @@
 package crcnn;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
 import gnu.trove.TIntArrayList;
 
-public class CRCNN {
+public class CRCNN implements Serializable{
 	public Parameters para;
 	public CRCNNmain owner;
 	
@@ -154,7 +155,7 @@ public class CRCNN {
 		return s;
 	}
 	
-	public void forwardbackward(Example ex) {
+	public double forwardbackward(Example ex/*, int epoch*/) {
 		List<double[][]> convolMatrixes = new ArrayList<>();
 		for(TIntArrayList sentFeatureID:ex.featureIDs) {
 			// input -> convolution in one sentence
@@ -266,6 +267,9 @@ public class CRCNN {
 			yPositive = 1;
 			cNegative = 0;
 		}
+		double loss = Math.log(1+CRCNNmain.exp(para.gamma*(para.mPostive-s[yPositive]))) +
+					  Math.log(1+CRCNNmain.exp(para.gamma*(para.mNegative+s[cNegative])));
+		
 		
 		// rank layer
 		double[][] gradWclass = new double[Wclass.length][Wclass[0].length];
@@ -273,7 +277,7 @@ public class CRCNN {
 		for(int i=0;i<Wclass.length;i++) {
 			double delta = i==yPositive ? 
 					-para.gamma*CRCNNmain.exp(para.gamma*(para.mPostive-s[yPositive]))/(1+CRCNNmain.exp(para.gamma*(para.mPostive-s[yPositive]))) :
-					para.gamma*CRCNNmain.exp(para.gamma*(para.mNegative-s[cNegative]))/(1+CRCNNmain.exp(para.gamma*(para.mNegative-s[cNegative])));
+					para.gamma*CRCNNmain.exp(para.gamma*(para.mNegative+s[cNegative]))/(1+CRCNNmain.exp(para.gamma*(para.mNegative+s[cNegative])));
 			for(int j=0;j<Wclass[0].length;j++) {
 				gradWclass[i][j] = delta*r[j];
 				grad_r[j] += delta*Wclass[i][j];
@@ -319,8 +323,10 @@ public class CRCNN {
 		}
 		
 		// sentence
-		/*List<double[]> grad_b1s = new ArrayList<>();
-		List<double[][]> grad_W1s = new ArrayList<>();*/
+		List<double[]> grad_b1s = new ArrayList<>();
+		List<double[][]> grad_W1s = new ArrayList<>();
+		List<double[][]> grad_Es = new ArrayList<>();
+		
 		for(int sentIdx = 0;sentIdx<sentRepresents.size();sentIdx++) {
 			double[] sentence = sentRepresents.get(sentIdx);
 			double[] grad_sentence = grad_sentences.get(sentIdx);
@@ -367,9 +373,107 @@ public class CRCNN {
 				}
 			}
 			
-			
+			grad_b1s.add(grad_b1);
+			grad_W1s.add(grad_W1);
+			grad_Es.add(grad_E);
+		}
+		
+		// combine all b1, W1, E into one
+		double[] grad_b1 = new double[b1.length];
+		double[][] grad_W1 = new double[W1.length][W1[0].length];
+		double[][] grad_E = new double[E.length][E[0].length];
+		for(int k=0;k<grad_b1s.size();k++) {
+			double[] temp_b1 = grad_b1s.get(k);
+			for(int i=0;i<temp_b1.length;i++) {
+				grad_b1[i] += temp_b1[i];
+			}
+			double[][] temp_W1 = grad_W1s.get(k);
+			for(int i=0;i<temp_W1.length;i++) {
+				for(int j=0;j<temp_W1[0].length;j++) {
+					grad_W1[i][j] += temp_W1[i][j];
+				}
+			}
+			double[][] temp_E = grad_Es.get(k);
+			for(int i=0;i<temp_E.length;i++) {
+				for(int j=0;j<temp_E[0].length;j++) {
+					grad_E[i][j] += temp_E[i][j];
+				}
+			}
+		}
+		
+		// l2 normalization
+		for(int i=0;i<gradWclass.length;i++) {
+			for(int j=0;j<gradWclass[0].length;j++) {
+				loss += para.regParameter * Wclass[i][j] * Wclass[i][j] / 2.0;
+				gradWclass[i][j] += para.regParameter * Wclass[i][j];
+			}
+		}
+		
+		for(int i=0;i<grad_W2.length;i++) {
+			for(int j=0;j<grad_W2[0].length;j++) {
+				loss += para.regParameter * W2[i][j] * W2[i][j] / 2.0;
+				grad_W2[i][j] += para.regParameter * W2[i][j];
+			}
+		}
+		
+		for(int i=0;i<grad_b2.length;i++) {
+			loss += para.regParameter * b2[i] * b2[i] / 2.0;
+			grad_b2[i] += para.regParameter * b2[i];
+		}
+		
+		for(int i=0;i<grad_b1.length;i++) {
+			loss += para.regParameter * b1[i] * b1[i] / 2.0;
+			grad_b1[i] += para.regParameter * b1[i];
+		}
+
+		for(int i=0;i<grad_W1.length;i++) {
+			for(int j=0;j<grad_W1[0].length;j++) {
+				loss += para.regParameter * W1[i][j] * W1[i][j] / 2.0;
+				grad_W1[i][j] += para.regParameter * W1[i][j];
+			}
+		}
+
+		for(int i=0;i<grad_E.length;i++) {
+			for(int j=0;j<grad_E[0].length;j++) {
+				loss += para.regParameter * E[i][j] * E[i][j] / 2.0;
+				grad_E[i][j] += para.regParameter * E[i][j];
+			}
+		}
+		
+		// update parameters
+		for(int i=0;i<gradWclass.length;i++) {
+			for(int j=0;j<gradWclass[0].length;j++) {
+				Wclass[i][j] -= para.initialLearningRate * gradWclass[i][j] /*/ epoch*/;
+			}
+		}
+		
+		for(int i=0;i<grad_W2.length;i++) {
+			for(int j=0;j<grad_W2[0].length;j++) {
+				W2[i][j] -= para.initialLearningRate * grad_W2[i][j] /*/ epoch*/;
+			}
+		}
+		
+		for(int i=0;i<grad_b2.length;i++) {
+			b2[i] -= para.initialLearningRate * grad_b2[i] /*/ epoch*/;
+		}
+		
+		for(int i=0;i<grad_b1.length;i++) {
+			b1[i] -= para.initialLearningRate * grad_b1[i] /*/ epoch*/;
+		}
+
+		for(int i=0;i<grad_W1.length;i++) {
+			for(int j=0;j<grad_W1[0].length;j++) {
+				W1[i][j] -= para.initialLearningRate * grad_W1[i][j] /*/ epoch*/;
+			}
+		}
+
+		for(int i=0;i<grad_E.length;i++) {
+			for(int j=0;j<grad_E[0].length;j++) {
+				E[i][j] -= para.initialLearningRate * grad_E[i][j] /*/ epoch*/;
+			}
 		}
 		
 		
+		return loss;
 	}
 }

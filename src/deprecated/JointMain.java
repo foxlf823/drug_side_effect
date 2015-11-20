@@ -678,10 +678,10 @@ public class JointMain {
 					Entity entity1 = outputdata.segments.get(i);
 					Entity entity2 = outputdata.segments.get(j);
 					if(entity1.type.equals(Perceptron.EMPTY) || entity2.type.equals(Perceptron.EMPTY)) continue;
-					if(RelationGold.twoEntitiesHaveRelation(document,entity1, entity2)) {
+					//if(RelationGold.twoEntitiesHaveRelation(document,entity1, entity2)) {
 						RelationEntity relationEntity = new RelationEntity(alphabetRelationType.get(0), entity1, entity2);
 						outputdata.relations.add(relationEntity);
-					}
+					//}
 				}
 			}
 			

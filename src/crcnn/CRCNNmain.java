@@ -1,6 +1,7 @@
 package crcnn;
 
 import java.io.FileInputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -9,6 +10,8 @@ import java.util.Properties;
 import cn.fox.nlp.SentenceSplitter;
 import cn.fox.nlp.Word2Vec;
 import cn.fox.stanford.Tokenizer;
+import cn.fox.utils.Evaluater;
+import cn.fox.utils.ObjectSerializer;
 import drug_side_effect_utils.BiocDocument;
 import drug_side_effect_utils.BiocXmlParser;
 import drug_side_effect_utils.Entity;
@@ -22,9 +25,11 @@ import edu.stanford.nlp.util.PropertiesUtils;
 import gnu.trove.TIntArrayList;
 import gnu.trove.TObjectIntHashMap;
 
-public class CRCNNmain {
+public class CRCNNmain implements Serializable{
+	
 	public List<String> knownWords;
 	public TObjectIntHashMap<String> wordIDs;
+	public CRCNN crcnn;
 	
 	public static void main(String[] args) throws Exception {
 		FileInputStream fis = new FileInputStream(args[0]);
@@ -36,13 +41,15 @@ public class CRCNNmain {
 		parameters.printParameters();
 		
 		String embedFile = PropertiesUtils.getString(properties, "embedFile", "");
+		String modelFile = PropertiesUtils.getString(properties, "model_save_path", "");
 		
 		Tool tool = new Tool();
 		tool.tokenizer = new Tokenizer(true, ' ');	
 		tool.sentSplit = new SentenceSplitter(new Character[]{';'},false, PropertiesUtils.getString(properties, "common_english_abbr", ""));
 		
 		BiocXmlParser xmlParser = new BiocXmlParser(PropertiesUtils.getString(properties, "bioc_dtd", ""), BiocXmlParser.ParseOption.BOTH);
-		ArrayList<BiocDocument> trainDocs = xmlParser.parseBiocXmlFile(PropertiesUtils.getString(properties, "bioc_documents", ""));	
+		ArrayList<BiocDocument> trainDocs = xmlParser.parseBiocXmlFile(PropertiesUtils.getString(properties, "bioc_documents", ""));
+		ArrayList<BiocDocument> testDocs = xmlParser.parseBiocXmlFile(PropertiesUtils.getString(properties, "bioc_documents_test", ""));
 		
 		List<String> word = new ArrayList<>();
 		// prepare alphabet
@@ -75,15 +82,88 @@ public class CRCNNmain {
 	    Word2Vec.loadEmbedding(embedFile, E, parameters.initRange, crcnnMain.knownWords);
 	    
 	    CRCNN crcnn = new CRCNN(parameters, E, crcnnMain);
+	    crcnnMain.crcnn = crcnn;
 	    
-	    
-	    /*
-	     *  prepare training examples.
-	     *  Each CID as an example, all the sentences in the document will be considered.
-	     *  Other entities replaced with their type.
-	     */
 	    List<Example> trainExamples = new ArrayList<>();
-	    for(BiocDocument doc:trainDocs) {
+	    for(int k=0;k<trainDocs.size();k++) {
+	    	BiocDocument doc = trainDocs.get(k);
+	    	List<Example> examples = prepareExample(tool, doc, crcnnMain);
+	    	trainExamples.addAll(examples);
+	    }
+	    System.out.println("train examples number: "+trainExamples.size());
+	    
+	    BestPerformance best = new BestPerformance();
+	    
+	    for(int epoch=1;epoch<=parameters.maxIter;epoch++) {
+	    	//long startTime = System.currentTimeMillis();
+	    	double loss = 0;
+	    	for(int i=0;i<trainExamples.size();i++) {
+	    		loss += crcnn.forwardbackward(trainExamples.get(i)/*, epoch*/);
+	    		
+	    	}
+	    	//System.out.println("Elapsed Time: " + (System.currentTimeMillis() - startTime) / 1000.0 + " (s)");
+	    	if (epoch>1 && epoch % parameters.evalPerIter == 0) {
+	    		System.out.println("loss: "+loss);
+	    		evalute(testDocs, best, crcnnMain, tool, modelFile);
+	    	}
+	    	
+	    	
+	    }
+	    
+	    	
+	    evalute(testDocs, best, crcnnMain, tool, modelFile);
+		
+	}
+	
+	public static void evalute(List<BiocDocument> docs, BestPerformance best, CRCNNmain crcnnMain,
+			Tool tool, String modelFile) {
+		int pre = 0;
+		int gold = 0;
+		int correct = 0;
+		for(int k=0;k<docs.size();k++) {
+			BiocDocument doc = docs.get(k);
+			List<Example> testExamples = prepareExample(tool, doc, crcnnMain);
+			HashSet<Relation> preRelations = new HashSet<>();
+			for(int i=0;i<testExamples.size();i++) {
+				Example e = testExamples.get(i);
+				double[] scores = crcnnMain.crcnn.computeScore(e);
+				if(scores[0] < scores[1]) {
+					Relation tempRelation = new Relation(null, Parameters.RELATION, e.drugMesh, e.diseaseMesh);
+					preRelations.add(tempRelation);
+				}
+				
+			}
+			
+			pre += preRelations.size();
+			gold += doc.relations.size();
+			preRelations.retainAll(doc.relations);
+			correct += preRelations.size();
+		}
+		
+		double precision = Evaluater.getPrecisionV2(correct, pre);
+		double recall = Evaluater.getRecallV2(correct, gold);
+		double f1 = Evaluater.getFMeasure(precision, recall, 1);
+		
+		if ((f1 > best.f1Relation)) {
+	        
+	          System.out.println("Current Exceeds the best! p,r,f1: "+precision+" "+recall+" "+f1);
+	          best.pRelation = precision;
+	          best.rRelation = recall;
+	          best.f1Relation = f1;
+	          ObjectSerializer.writeObjectToFile(crcnnMain, modelFile);
+	    }
+		
+	}
+	
+	/*
+     *  prepare training examples.
+     *  Each CID as an example, all the sentences in the document will be considered.
+     *  Other entities replaced with their type.
+     */
+	public static List<Example> prepareExample(Tool tool, BiocDocument doc, CRCNNmain crcnnMain) {
+		
+	    List<Example> examples = new ArrayList<>();
+
 	    	// the entities with the same mesh IDs will generate the same examples
 	    	// so we record them and avoid generating overlapped examples
 	    	HashSet<Relation> hasUsed = new HashSet<>();
@@ -99,7 +179,9 @@ public class CRCNNmain {
 	    			if(hasUsed.contains(tempRelation))
 	    				continue;
 	    			
-	    			Example example = new Example();
+	    			Entity drug = former.type.equals("Chemical") ? former:latter;
+	    			Entity disease = former.type.equals("Chemical") ? latter:former;
+	    			Example example = new Example(drug.mesh, disease.mesh);
 	    			example.featureIDs = new ArrayList<>();
 		    		List<String> strSentences = tool.sentSplit.splitWithFilters(content);
 					int offset = 0;
@@ -126,16 +208,13 @@ public class CRCNNmain {
 						example.label = 0;
 					
 					hasUsed.add(tempRelation);
-					trainExamples.add(example);
+					examples.add(example);
 	    		}
 	    	}
 	    	
-		}
+		
 	    
-	    for(int i=0;i<100;i++)
-	    	crcnn.forwardbackward(trainExamples.get(i));
-	    
-		System.out.println();
+	    return examples;
 	}
 	
 	
@@ -169,4 +248,12 @@ public class CRCNNmain {
 		return Math.exp(x);
 	}
 
+}
+
+class BestPerformance {
+	public double pRelation= -1;
+	public double rRelation= -1;
+	public double f1Relation= -1;
+	
+	
 }
