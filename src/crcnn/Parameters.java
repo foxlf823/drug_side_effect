@@ -45,6 +45,9 @@ public class Parameters implements Serializable{
 	  public double gamma = 2;
 	  public double mPostive = 2.5;
 	  public double mNegative = 0.5;
+	  
+	  public int batchSize = 100;
+	  public double adaEps = 1e-6;
 
 	  public Parameters(Properties properties) {
 	    setProperties(properties);
@@ -65,8 +68,8 @@ public class Parameters implements Serializable{
 		gamma = PropertiesUtils.getDouble(props, "gamma", gamma);  
 		mPostive = PropertiesUtils.getDouble(props, "mPostive", mPostive);  
 		mNegative = PropertiesUtils.getDouble(props, "mNegative", mNegative);  
-		
-
+		batchSize = PropertiesUtils.getInt(props, "batchSize", batchSize);
+		adaEps = PropertiesUtils.getDouble(props, "adaEps", adaEps);  
 	  }
 	
 	 	
@@ -86,6 +89,8 @@ public class Parameters implements Serializable{
 		System.out.printf("gamma = %.2g%n", gamma);
 		System.out.printf("mPostive = %.2g%n", mPostive);
 		System.out.printf("mNegative = %.2g%n", mNegative);
+		System.out.printf("batchSize = %d%n", batchSize);
+		System.out.printf("adaEps = %.2g%n", adaEps);
 		
 		System.out.println(SEPARATOR);
 	  }

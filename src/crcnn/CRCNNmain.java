@@ -12,6 +12,7 @@ import cn.fox.nlp.Word2Vec;
 import cn.fox.stanford.Tokenizer;
 import cn.fox.utils.Evaluater;
 import cn.fox.utils.ObjectSerializer;
+import cn.fox.utils.ObjectShuffle;
 import drug_side_effect_utils.BiocDocument;
 import drug_side_effect_utils.BiocXmlParser;
 import drug_side_effect_utils.Entity;
@@ -37,6 +38,10 @@ public class CRCNNmain implements Serializable{
 		properties.load(fis);    
 		fis.close();
 		
+		boolean debug = Boolean.parseBoolean(args[1]);
+		
+		boolean continueTrain = Boolean.parseBoolean(args[2]);
+		
 		Parameters parameters = new Parameters(properties);
 		parameters.printParameters();
 		
@@ -51,59 +56,71 @@ public class CRCNNmain implements Serializable{
 		ArrayList<BiocDocument> trainDocs = xmlParser.parseBiocXmlFile(PropertiesUtils.getString(properties, "bioc_documents", ""));
 		ArrayList<BiocDocument> testDocs = xmlParser.parseBiocXmlFile(PropertiesUtils.getString(properties, "bioc_documents_test", ""));
 		
-		List<String> word = new ArrayList<>();
-		// prepare alphabet
-		for(BiocDocument doc:trainDocs) {
-	    	String content = doc.title+" "+doc.abstractt;
-			
-			List<String> strSentences = tool.sentSplit.splitWithFilters(content);
-			int offset = 0;
-			for(String temp:strSentences) {
-				ArrayList<CoreLabel> tokens = tool.tokenizer.tokenize(offset, temp);
-				for(CoreLabel token: tokens) {
-					word.add(token.word().toLowerCase());
+		CRCNNmain crcnnMain = null;
+		if(!continueTrain) {
+			List<String> word = new ArrayList<>();
+			// prepare alphabet
+			for(BiocDocument doc:trainDocs) {
+		    	String content = doc.title+" "+doc.abstractt;
+				
+				List<String> strSentences = tool.sentSplit.splitWithFilters(content);
+				int offset = 0;
+				for(String temp:strSentences) {
+					ArrayList<CoreLabel> tokens = tool.tokenizer.tokenize(offset, temp);
+					for(CoreLabel token: tokens) {
+						word.add(token.word().toLowerCase());
+					}
+					offset += temp.length();
 				}
-				offset += temp.length();
 			}
+			
+			crcnnMain = new CRCNNmain();
+			crcnnMain.knownWords = generateDict(word, 1);
+			crcnnMain.knownWords.add(0, Parameters.UNKNOWN);
+			crcnnMain.knownWords.add(1, Parameters.PADDING);
+			crcnnMain.knownWords.add(2, Parameters.CHEMICAL);
+			crcnnMain.knownWords.add(3, Parameters.DISEASE);
+			crcnnMain.wordIDs = new TObjectIntHashMap<String>();
+		    int m = 0;
+		    for (String temp : crcnnMain.knownWords)
+		    	crcnnMain.wordIDs.put(temp, (m++));
+		    
+		    double[][] E = new double[crcnnMain.knownWords.size()][parameters.embSize];
+		    Word2Vec.loadEmbedding(embedFile, E, parameters.initRange, crcnnMain.knownWords);
+		    
+		    CRCNN crcnn = new CRCNN(parameters, E, crcnnMain);
+		    crcnnMain.crcnn = crcnn;
+
+		    crcnn.initial();
+		} else {
+			crcnnMain = (CRCNNmain)ObjectSerializer.readObjectFromFile(modelFile);
 		}
 		
-		CRCNNmain crcnnMain = new CRCNNmain();
-		crcnnMain.knownWords = generateDict(word, 1);
-		crcnnMain.knownWords.add(0, Parameters.UNKNOWN);
-		crcnnMain.knownWords.add(1, Parameters.PADDING);
-		crcnnMain.knownWords.add(2, Parameters.CHEMICAL);
-		crcnnMain.knownWords.add(3, Parameters.DISEASE);
-		crcnnMain.wordIDs = new TObjectIntHashMap<String>();
-	    int m = 0;
-	    for (String temp : crcnnMain.knownWords)
-	    	crcnnMain.wordIDs.put(temp, (m++));
-	    
-	    double[][] E = new double[crcnnMain.knownWords.size()][parameters.embSize];
-	    Word2Vec.loadEmbedding(embedFile, E, parameters.initRange, crcnnMain.knownWords);
-	    
-	    CRCNN crcnn = new CRCNN(parameters, E, crcnnMain);
-	    crcnnMain.crcnn = crcnn;
-	    
-	    List<Example> trainExamples = new ArrayList<>();
+		BestPerformance best = new BestPerformance();
+		List<Example> trainExamples = new ArrayList<>();
 	    for(int k=0;k<trainDocs.size();k++) {
 	    	BiocDocument doc = trainDocs.get(k);
 	    	List<Example> examples = prepareExample(tool, doc, crcnnMain);
 	    	trainExamples.addAll(examples);
 	    }
-	    System.out.println("train examples number: "+trainExamples.size());
-	    
-	    BestPerformance best = new BestPerformance();
+
+	    List<Example> examples = trainExamples;
+	    System.out.println("train examples number: "+examples.size());
 	    
 	    for(int epoch=1;epoch<=parameters.maxIter;epoch++) {
-	    	//long startTime = System.currentTimeMillis();
-	    	double loss = 0;
-	    	for(int i=0;i<trainExamples.size();i++) {
-	    		loss += crcnn.forwardbackward(trainExamples.get(i)/*, epoch*/);
-	    		
-	    	}
-	    	//System.out.println("Elapsed Time: " + (System.currentTimeMillis() - startTime) / 1000.0 + " (s)");
-	    	if (epoch>1 && epoch % parameters.evalPerIter == 0) {
-	    		System.out.println("loss: "+loss);
+	    	if(debug)
+	    		System.out.println("epoch "+epoch);
+	    	long startTime = 0;
+	    	if(debug)
+	    		startTime = System.currentTimeMillis();
+
+	    	crcnnMain.crcnn.sgd(examples, debug);
+	    	
+	    	if(debug)
+	    		System.out.println("Elapsed Time: " + (System.currentTimeMillis() - startTime) / 1000.0 + " (s)");
+	    	
+	    	
+	    	if (epoch % parameters.evalPerIter == 0) {
 	    		evalute(testDocs, best, crcnnMain, tool, modelFile);
 	    	}
 	    	
@@ -114,6 +131,8 @@ public class CRCNNmain implements Serializable{
 	    evalute(testDocs, best, crcnnMain, tool, modelFile);
 		
 	}
+	
+	
 	
 	public static void evalute(List<BiocDocument> docs, BestPerformance best, CRCNNmain crcnnMain,
 			Tool tool, String modelFile) {
@@ -143,10 +162,9 @@ public class CRCNNmain implements Serializable{
 		double precision = Evaluater.getPrecisionV2(correct, pre);
 		double recall = Evaluater.getRecallV2(correct, gold);
 		double f1 = Evaluater.getFMeasure(precision, recall, 1);
-		
+		System.out.println("Current p,r,f1: "+precision+" "+recall+" "+f1);
 		if ((f1 > best.f1Relation)) {
-	        
-	          System.out.println("Current Exceeds the best! p,r,f1: "+precision+" "+recall+" "+f1);
+	          System.out.println("Current Exceeds the best!");
 	          best.pRelation = precision;
 	          best.rRelation = recall;
 	          best.f1Relation = f1;

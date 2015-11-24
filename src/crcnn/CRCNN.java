@@ -21,6 +21,20 @@ public class CRCNN implements Serializable{
 	
 	double [][] Wclass;
 	
+	double[][] gradE;
+	double[][] gradW1;
+	double[]   gradb1;
+	double[][] gradW2;
+	double[]   gradb2;
+	double[][] gradWclass;
+	
+	/*double[][] eg2E;
+	double[][] eg2W1;
+	double[]   eg2b1;
+	double[][] eg2W2;
+	double[]   eg2b2;
+	double[][] eg2Wclass;*/
+	
 	public CRCNN(Parameters para, double[][] E, CRCNNmain owner) {
 		this.para = para;
 		this.owner = owner;
@@ -70,22 +84,21 @@ public class CRCNN implements Serializable{
 			for(int wordIdx=0;wordIdx<sentFeatureID.size();wordIdx++) {
 				for(int convolIdx=0;convolIdx<para.convolutinalUnits;convolIdx++) {
 					// W1*X
-					int preWord = wordIdx==0 ? owner.getWordID(Parameters.PADDING) : sentFeatureID.get(wordIdx-1);
-					int curWord = sentFeatureID.get(wordIdx);
-					int nextWord = wordIdx==sentFeatureID.size()-1 ? owner.getWordID(Parameters.PADDING) : sentFeatureID.get(wordIdx+1);
-					
+					int contextNumber = (para.contextWindowSize-1)/2;
 					int offset = 0;
-					for(int i=0;i<para.embSize;i++) {
-						convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+i]*E[preWord][i];
+					for(int i=wordIdx-contextNumber;i<=wordIdx+contextNumber;i++) {
+						int curWord = -1;
+						if(i<0 || i>sentFeatureID.size()-1)
+							curWord = owner.getWordID(Parameters.PADDING);
+						else
+							curWord = sentFeatureID.get(i);
+						
+						for(int j=0;j<para.embSize;j++) {
+							convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+j]*E[curWord][j];
+						}
+						offset += para.embSize;	
 					}
-					offset += para.embSize;
-					for(int i=0;i<para.embSize;i++) {
-						convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+i]*E[curWord][i];
-					}
-					offset += para.embSize;
-					for(int i=0;i<para.embSize;i++) {
-						convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+i]*E[nextWord][i];
-					}
+					
 					// +b1
 					convolMatrix[wordIdx][convolIdx] += b1[convolIdx];
 					// tanh
@@ -155,7 +168,8 @@ public class CRCNN implements Serializable{
 		return s;
 	}
 	
-	public double forwardbackward(Example ex/*, int epoch*/) {
+		
+	public double forwardbackward(Example ex, int batchSize) {
 		List<double[][]> convolMatrixes = new ArrayList<>();
 		for(TIntArrayList sentFeatureID:ex.featureIDs) {
 			// input -> convolution in one sentence
@@ -164,21 +178,19 @@ public class CRCNN implements Serializable{
 			for(int wordIdx=0;wordIdx<sentFeatureID.size();wordIdx++) {
 				for(int convolIdx=0;convolIdx<para.convolutinalUnits;convolIdx++) {
 					// W1*X
-					int preWord = wordIdx==0 ? owner.getWordID(Parameters.PADDING) : sentFeatureID.get(wordIdx-1);
-					int curWord = sentFeatureID.get(wordIdx);
-					int nextWord = wordIdx==sentFeatureID.size()-1 ? owner.getWordID(Parameters.PADDING) : sentFeatureID.get(wordIdx+1);
-					
+					int contextNumber = (para.contextWindowSize-1)/2;
 					int offset = 0;
-					for(int i=0;i<para.embSize;i++) {
-						convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+i]*E[preWord][i];
-					}
-					offset += para.embSize;
-					for(int i=0;i<para.embSize;i++) {
-						convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+i]*E[curWord][i];
-					}
-					offset += para.embSize;
-					for(int i=0;i<para.embSize;i++) {
-						convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+i]*E[nextWord][i];
+					for(int i=wordIdx-contextNumber;i<=wordIdx+contextNumber;i++) {
+						int curWord = -1;
+						if(i<0 || i>sentFeatureID.size()-1)
+							curWord = owner.getWordID(Parameters.PADDING);
+						else
+							curWord = sentFeatureID.get(i);
+						
+						for(int j=0;j<para.embSize;j++) {
+							convolMatrix[wordIdx][convolIdx] += W1[convolIdx][offset+j]*E[curWord][j];
+						}
+						offset += para.embSize;	
 					}
 					// +b1
 					convolMatrix[wordIdx][convolIdx] += b1[convolIdx];
@@ -272,14 +284,13 @@ public class CRCNN implements Serializable{
 		
 		
 		// rank layer
-		double[][] gradWclass = new double[Wclass.length][Wclass[0].length];
 		double[] grad_r = new double[r.length];
 		for(int i=0;i<Wclass.length;i++) {
 			double delta = i==yPositive ? 
-					-para.gamma*CRCNNmain.exp(para.gamma*(para.mPostive-s[yPositive]))/(1+CRCNNmain.exp(para.gamma*(para.mPostive-s[yPositive]))) :
-					para.gamma*CRCNNmain.exp(para.gamma*(para.mNegative+s[cNegative]))/(1+CRCNNmain.exp(para.gamma*(para.mNegative+s[cNegative])));
+					-para.gamma*CRCNNmain.exp(para.gamma*(para.mPostive-s[yPositive]))/(/*batchSize**/(1+CRCNNmain.exp(para.gamma*(para.mPostive-s[yPositive])))) :
+					para.gamma*CRCNNmain.exp(para.gamma*(para.mNegative+s[cNegative]))/(/*batchSize**/(1+CRCNNmain.exp(para.gamma*(para.mNegative+s[cNegative]))));
 			for(int j=0;j<Wclass[0].length;j++) {
-				gradWclass[i][j] = delta*r[j];
+				gradWclass[i][j] += delta*r[j];
 				grad_r[j] += delta*Wclass[i][j];
 			}
 		}
@@ -295,8 +306,6 @@ public class CRCNN implements Serializable{
 			}
 		}
 		
-		double[] grad_b2 = new double[b2.length];
-		double[][] grad_W2 = new double[W2.length][W2[0].length];
 		List<double[]> grad_sentences = new ArrayList<>();
 		for(double[] sentence:sentRepresents) {
 			double[] x = new double[sentence.length];
@@ -304,7 +313,7 @@ public class CRCNN implements Serializable{
 		}
 		for(int i=0;i<numSentConvol;i++) { 
 			for(int j=0;j<W2.length;j++) {
-				grad_b2[j] += N[i][j];
+				gradb2[j] += N[i][j];
 				
 				int offset = 0;
 				for(int sentWindowIdx=0;sentWindowIdx<para.sentWindowSize;sentWindowIdx++) {
@@ -312,7 +321,7 @@ public class CRCNN implements Serializable{
 					double[] sentence = sentRepresents.get(sentIdx);
 					double[] grad_sentence = grad_sentences.get(sentIdx);
 					for(int sentRepresentIdx=0;sentRepresentIdx<sentence.length;sentRepresentIdx++) {
-						grad_W2[j][sentRepresentIdx+offset] += N[i][j] * sentence[sentRepresentIdx];
+						gradW2[j][sentRepresentIdx+offset] += N[i][j] * sentence[sentRepresentIdx];
 						grad_sentence[sentRepresentIdx] += N[i][j] * W2[j][sentRepresentIdx+offset];
 					}
 
@@ -323,10 +332,6 @@ public class CRCNN implements Serializable{
 		}
 		
 		// sentence
-		List<double[]> grad_b1s = new ArrayList<>();
-		List<double[][]> grad_W1s = new ArrayList<>();
-		List<double[][]> grad_Es = new ArrayList<>();
-		
 		for(int sentIdx = 0;sentIdx<sentRepresents.size();sentIdx++) {
 			double[] sentence = sentRepresents.get(sentIdx);
 			double[] grad_sentence = grad_sentences.get(sentIdx);
@@ -344,136 +349,136 @@ public class CRCNN implements Serializable{
 				}
 			}
 			
-			double[] grad_b1 = new double[b1.length];
-			double[][] grad_W1 = new double[W1.length][W1[0].length];
-			double[][] grad_E = new double[E.length][E[0].length];
-			for(int i=0;i<sentFeatureID.size();i++) { 
-				for(int j=0;j<W1.length;j++) {
-					grad_b1[j] += B[i][j];
+			for(int wordIdx=0;wordIdx<sentFeatureID.size();wordIdx++) { 
+				for(int convolIdx=0;convolIdx<W1.length;convolIdx++) {
+					gradb1[convolIdx] += B[wordIdx][convolIdx];
 					
-					int preWord = i==0 ? owner.getWordID(Parameters.PADDING) : sentFeatureID.get(i-1);
-					int curWord = sentFeatureID.get(i);
-					int nextWord = i==sentFeatureID.size()-1 ? owner.getWordID(Parameters.PADDING) : sentFeatureID.get(i+1);
-					
+					int contextNumber = (para.contextWindowSize-1)/2;
 					int offset = 0;
-					for(int embIdx=0;embIdx<para.embSize;embIdx++) {
-						grad_W1[j][embIdx+offset] += B[i][j]*E[preWord][embIdx];
-						grad_E[preWord][embIdx] += B[i][j] * W1[j][embIdx+offset];
+					for(int i=wordIdx-contextNumber;i<=wordIdx+contextNumber;i++) {
+						int curWord = -1;
+						if(i<0 || i>sentFeatureID.size()-1)
+							curWord = owner.getWordID(Parameters.PADDING);
+						else
+							curWord = sentFeatureID.get(i);
+						
+						for(int j=0;j<para.embSize;j++) {
+							gradW1[convolIdx][j+offset] += B[wordIdx][convolIdx]*E[curWord][j];
+							gradE[curWord][j] += B[wordIdx][convolIdx] * W1[convolIdx][j+offset];
+						}
+						offset += para.embSize;	
 					}
-					offset += para.embSize;
-					for(int embIdx=0;embIdx<para.embSize;embIdx++) {
-						grad_W1[j][embIdx+offset] += B[i][j]*E[curWord][embIdx];
-						grad_E[curWord][embIdx] += B[i][j] * W1[j][embIdx+offset];
-					}
-					offset += para.embSize;
-					for(int embIdx=0;embIdx<para.embSize;embIdx++) {
-						grad_W1[j][embIdx+offset] += B[i][j]*E[nextWord][embIdx];
-						grad_E[nextWord][embIdx] += B[i][j] * W1[j][embIdx+offset];
-					}
+					
 				}
 			}
-			
-			grad_b1s.add(grad_b1);
-			grad_W1s.add(grad_W1);
-			grad_Es.add(grad_E);
+
 		}
 		
-		// combine all b1, W1, E into one
-		double[] grad_b1 = new double[b1.length];
-		double[][] grad_W1 = new double[W1.length][W1[0].length];
-		double[][] grad_E = new double[E.length][E[0].length];
-		for(int k=0;k<grad_b1s.size();k++) {
-			double[] temp_b1 = grad_b1s.get(k);
-			for(int i=0;i<temp_b1.length;i++) {
-				grad_b1[i] += temp_b1[i];
-			}
-			double[][] temp_W1 = grad_W1s.get(k);
-			for(int i=0;i<temp_W1.length;i++) {
-				for(int j=0;j<temp_W1[0].length;j++) {
-					grad_W1[i][j] += temp_W1[i][j];
-				}
-			}
-			double[][] temp_E = grad_Es.get(k);
-			for(int i=0;i<temp_E.length;i++) {
-				for(int j=0;j<temp_E[0].length;j++) {
-					grad_E[i][j] += temp_E[i][j];
-				}
-			}
+
+		return loss;
+	}
+	
+	public void initial() {
+		/*eg2E = new double[E.length][E[0].length];
+		eg2W1 = new double[W1.length][W1[0].length];
+		eg2b1 = new double[b1.length];
+		eg2W2 = new double[W2.length][W2[0].length];
+		eg2b2 = new double[b2.length];
+		eg2Wclass = new double[Wclass.length][Wclass[0].length];*/
+	}
+	
+/*	public double minibatch(List<Example> examples) {
+		gradE = new double[E.length][E[0].length];
+		gradW1 = new double[W1.length][W1[0].length];
+		gradb1 = new double[b1.length];
+		gradW2 = new double[W2.length][W2[0].length];
+		gradb2 = new double[b2.length];
+		gradWclass = new double[Wclass.length][Wclass[0].length];
+		double loss = 0;
+		for(Example ex:examples) {
+			loss += forwardbackward(ex, examples.size());
 		}
-		
+		loss = addL2NormalandAdaGrad(loss);
+		return loss;
+	}*/
+	
+	public void sgd(List<Example> examples, boolean debug) {
+		double loss = 0;
+		for(Example ex:examples) {
+			gradE = new double[E.length][E[0].length];
+			gradW1 = new double[W1.length][W1[0].length];
+			gradb1 = new double[b1.length];
+			gradW2 = new double[W2.length][W2[0].length];
+			gradb2 = new double[b2.length];
+			gradWclass = new double[Wclass.length][Wclass[0].length];
+			double temploss = 0;
+			temploss = forwardbackward(ex, examples.size());
+			temploss = addL2NormalandUpdate(temploss);
+			loss += temploss;
+		}
+		if(debug)
+			System.out.println("loss "+loss);
+	}
+	
+	public double addL2NormalandUpdate(double loss) {
 		// l2 normalization
 		for(int i=0;i<gradWclass.length;i++) {
 			for(int j=0;j<gradWclass[0].length;j++) {
 				loss += para.regParameter * Wclass[i][j] * Wclass[i][j] / 2.0;
 				gradWclass[i][j] += para.regParameter * Wclass[i][j];
+				Wclass[i][j] -= para.initialLearningRate * gradWclass[i][j];
+				/*eg2Wclass[i][j] += gradWclass[i][j]*gradWclass[i][j];
+				Wclass[i][j] -= para.initialLearningRate * gradWclass[i][j] / Math.sqrt(eg2Wclass[i][j]+para.adaEps) ;*/
 			}
 		}
-		
-		for(int i=0;i<grad_W2.length;i++) {
-			for(int j=0;j<grad_W2[0].length;j++) {
+				
+		for(int i=0;i<gradW2.length;i++) {
+			for(int j=0;j<gradW2[0].length;j++) {
 				loss += para.regParameter * W2[i][j] * W2[i][j] / 2.0;
-				grad_W2[i][j] += para.regParameter * W2[i][j];
+				gradW2[i][j] += para.regParameter * W2[i][j];
+				W2[i][j] -= para.initialLearningRate * gradW2[i][j];
+				/*eg2W2[i][j] += gradW2[i][j]*gradW2[i][j];
+				W2[i][j] -= para.initialLearningRate * gradW2[i][j] / Math.sqrt(eg2W2[i][j]+para.adaEps) ;*/
 			}
 		}
-		
-		for(int i=0;i<grad_b2.length;i++) {
+				
+		for(int i=0;i<gradb2.length;i++) {
 			loss += para.regParameter * b2[i] * b2[i] / 2.0;
-			grad_b2[i] += para.regParameter * b2[i];
+			gradb2[i] += para.regParameter * b2[i];
+			b2[i] -= para.initialLearningRate * gradb2[i];
+			/*eg2b2[i] += gradb2[i]*gradb2[i];
+			b2[i] -= para.initialLearningRate * gradb2[i] / Math.sqrt(eg2b2[i]+para.adaEps) ;*/
 		}
 		
-		for(int i=0;i<grad_b1.length;i++) {
+		for(int i=0;i<gradb1.length;i++) {
 			loss += para.regParameter * b1[i] * b1[i] / 2.0;
-			grad_b1[i] += para.regParameter * b1[i];
+			gradb1[i] += para.regParameter * b1[i];
+			b1[i] -= para.initialLearningRate * gradb1[i];
+			/*eg2b1[i] += gradb1[i]*gradb1[i];
+			b1[i] -= para.initialLearningRate * gradb1[i] / Math.sqrt(eg2b1[i]+para.adaEps) ;*/
 		}
 
-		for(int i=0;i<grad_W1.length;i++) {
-			for(int j=0;j<grad_W1[0].length;j++) {
+		for(int i=0;i<gradW1.length;i++) {
+			for(int j=0;j<gradW1[0].length;j++) {
 				loss += para.regParameter * W1[i][j] * W1[i][j] / 2.0;
-				grad_W1[i][j] += para.regParameter * W1[i][j];
+				gradW1[i][j] += para.regParameter * W1[i][j];
+				W1[i][j] -= para.initialLearningRate * gradW1[i][j];
+				/*eg2W1[i][j] += gradW1[i][j]*gradW1[i][j];
+				W1[i][j] -= para.initialLearningRate * gradW1[i][j] / Math.sqrt(eg2W1[i][j]+para.adaEps) ;*/
 			}
 		}
 
-		for(int i=0;i<grad_E.length;i++) {
-			for(int j=0;j<grad_E[0].length;j++) {
+		for(int i=0;i<gradE.length;i++) {
+			for(int j=0;j<gradE[0].length;j++) {
 				loss += para.regParameter * E[i][j] * E[i][j] / 2.0;
-				grad_E[i][j] += para.regParameter * E[i][j];
+				gradE[i][j] += para.regParameter * E[i][j];
+				E[i][j] -= para.initialLearningRate * gradE[i][j];
+				/*eg2E[i][j] += gradE[i][j]*gradE[i][j];
+				E[i][j] -= para.initialLearningRate * gradE[i][j] / Math.sqrt(eg2E[i][j]+para.adaEps) ;*/
 			}
 		}
-		
-		// update parameters
-		for(int i=0;i<gradWclass.length;i++) {
-			for(int j=0;j<gradWclass[0].length;j++) {
-				Wclass[i][j] -= para.initialLearningRate * gradWclass[i][j] /*/ epoch*/;
-			}
-		}
-		
-		for(int i=0;i<grad_W2.length;i++) {
-			for(int j=0;j<grad_W2[0].length;j++) {
-				W2[i][j] -= para.initialLearningRate * grad_W2[i][j] /*/ epoch*/;
-			}
-		}
-		
-		for(int i=0;i<grad_b2.length;i++) {
-			b2[i] -= para.initialLearningRate * grad_b2[i] /*/ epoch*/;
-		}
-		
-		for(int i=0;i<grad_b1.length;i++) {
-			b1[i] -= para.initialLearningRate * grad_b1[i] /*/ epoch*/;
-		}
-
-		for(int i=0;i<grad_W1.length;i++) {
-			for(int j=0;j<grad_W1[0].length;j++) {
-				W1[i][j] -= para.initialLearningRate * grad_W1[i][j] /*/ epoch*/;
-			}
-		}
-
-		for(int i=0;i<grad_E.length;i++) {
-			for(int j=0;j<grad_E[0].length;j++) {
-				E[i][j] -= para.initialLearningRate * grad_E[i][j] /*/ epoch*/;
-			}
-		}
-		
-		
 		return loss;
 	}
+
+	
 }
