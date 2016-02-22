@@ -1,5 +1,7 @@
 package drug_side_effect_utils;
 
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -115,4 +117,24 @@ public class BiocDocument {
 		return results;
 	}
 	
+	// currently not consider composite roles
+	public void dumpToPubtator(String fileDir) {
+		try {
+			OutputStreamWriter osw = new OutputStreamWriter(new FileOutputStream(fileDir+"/"+id+".txt"), "utf-8");
+			osw.write(id+"|t|"+title+"\n");
+			osw.write(id+"|a|"+abstractt+"\n");
+			for(int i=0;i<entities.size();i++) {
+				Entity entity = entities.get(i);
+				osw.write(id+"\t"+entity.offset+"\t"+entity.offsetEnd+"\t"+entity.text+"\t"+entity.type+"\t"+entity.mesh+"\n");
+			}
+			for(Relation r:relations) {
+				// 26094	CID	D008750	D003866
+				osw.write(id+"\t"+r.type+"\t"+r.mesh1+"\t"+r.mesh2+"\n");
+			}
+			
+			osw.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 }

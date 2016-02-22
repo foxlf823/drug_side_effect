@@ -15,6 +15,11 @@ public class Entity implements Serializable{
 	public int start; // the token index that this segment starts
 	public int end; // the token index that this segment ends.
 	
+	// for composite mention
+	public String compositeRole;
+	public int offset2;
+	public int offsetEnd2;
+	
 	public int sentIdx; // the sentence index which this entity belongs to 
 	
 	public String goldMeshId; // the gold id in the biomedical dictionary
@@ -27,6 +32,27 @@ public class Entity implements Serializable{
 		this.offset = offset;
 		this.text = text;
 		this.mesh = mesh;
+	}
+	
+	public Entity() {
+		super();
+		id = "-1";
+		type = "";
+		offset = -1;
+		text = "";
+		offsetEnd = -1;
+		mesh = "-1";
+		start = -1;
+		end = -1;
+		
+		compositeRole = "";
+		offset2 = -1;
+		offsetEnd2 = -1;
+		
+		sentIdx = -1;
+		
+		goldMeshId = "-1";
+		preMeshId = "-1";
 	}
 	
 	

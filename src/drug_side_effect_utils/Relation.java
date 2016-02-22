@@ -19,6 +19,15 @@ public class Relation implements Serializable{
 		this.mesh2 = mesh2;
 	}
 	
+	public Relation() {
+		id = "-1";
+		type = "";
+		mesh1 = "-1"; 
+		type1 = "";
+		mesh2 = "-1";
+		type2 = "";
+	}
+	
 	@Override
 	public boolean equals(Object obj) {
 		if(obj == null || !(obj instanceof Relation))

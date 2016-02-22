@@ -65,7 +65,9 @@ public class BiocXmlParser {
 				//strTitle = strTitle.replaceAll("-", " ");
 				Element abstracts = (Element)passages.item(1);
 				NodeList abstractTexts = abstracts.getElementsByTagName("text");
-				String strAbstract = abstractTexts.item(0).getFirstChild().getNodeValue();
+				String strAbstract = "";
+				if(abstractTexts.getLength()!=0) // some documents may have empty abstracts.
+					strAbstract = abstractTexts.item(0).getFirstChild().getNodeValue();
 				//strAbstract = strAbstract.replaceAll("-", " ");
 				
 				BiocDocument biocDocument = new BiocDocument(strId, strTitle, strAbstract);
@@ -74,11 +76,52 @@ public class BiocXmlParser {
 				NodeList annotations = document.getElementsByTagName("annotation");
 				int compositeCount = 0; 
 				ArrayList<Entity> compositeEntities = new ArrayList<>();
+
+				
 ANNO:			for(int j=0;j<annotations.getLength();j++) {
 					Element annotation = (Element)annotations.item(j);
 					String strAnnotationId = annotation.getAttribute("id");
 					NodeList infons = annotation.getElementsByTagName("infon");
+					
+					Entity entity = new Entity();
+					entity.id = strAnnotationId;
+					
 					for(int k=0;k<infons.getLength();k++) {
+						Element infon = (Element)infons.item(k);
+						if(infon.getAttribute("key").equals("type")) {
+							String strAnnotationType = infon.getFirstChild().getNodeValue();
+							if(strAnnotationType.equals("Disease") && option == ParseOption.ONLY_CHEMICAL)
+								continue ANNO;
+							else if(strAnnotationType.equals("Chemical") && option == ParseOption.ONLY_DISEASE)
+								continue ANNO;
+							
+							entity.type = strAnnotationType;
+						} else if(infon.getAttribute("key").equals("MESH")) {
+							String strAnnotationMesh = infon.getFirstChild().getNodeValue();
+							entity.mesh = strAnnotationMesh;
+						} else if(infon.getAttribute("key").equals("CompositeRole")) {
+							String strComposteRole = infon.getFirstChild().getNodeValue();
+							entity.compositeRole = strComposteRole;
+						}
+					}
+					
+					String strAnnotationText = ((Element)annotation.getElementsByTagName("text").item(0)).getFirstChild().getNodeValue();
+					entity.text = strAnnotationText;
+					
+					NodeList locations = annotation.getElementsByTagName("location");
+					Element location = (Element)locations.item(0);
+					entity.offset = Integer.parseInt(location.getAttribute("offset"));
+					entity.offsetEnd = entity.offset+Integer.parseInt(location.getAttribute("length"));
+					if(locations.getLength()==2) {
+						Element location2 = (Element)locations.item(1);
+						entity.offset2 = Integer.parseInt(location2.getAttribute("offset"));
+						entity.offsetEnd2 = entity.offset2+Integer.parseInt(location2.getAttribute("length"));
+					}
+					
+					biocDocument.entities.add(entity);
+					
+
+/*					for(int k=0;k<infons.getLength();k++) {
 						Element infon = (Element)infons.item(k);
 						if(infon.getAttribute("key").equals("type")) {
 							// entity
@@ -167,22 +210,8 @@ ANNO:			for(int j=0;j<annotations.getLength();j++) {
 							}
 								
 							
-						} else if(infon.getAttribute("key").equals("relation")) {
-							// relation
-							String strAnnotationRelation = infons.item(0).getFirstChild().getNodeValue();
-							Element infon1 = (Element)infons.item(1);
-							Element infon2 = (Element)infons.item(2);
-							String strAnnotationMesh1 = infon1.getFirstChild().getNodeValue();
-							String strAnnotationMesh2 = infon2.getFirstChild().getNodeValue();
-							Relation relation = new Relation(strAnnotationId, strAnnotationRelation, strAnnotationMesh1, strAnnotationMesh2);
-							relation.type1  = infon1.getAttribute("key");
-							relation.type2 = infon2.getAttribute("key");
-							//biocDocument.relations.put(relation.id, relation);
-							
-							biocDocument.relations.add(relation);
-							
 						}
-					}
+					}*/
 				}
 				
 				// for the corpus released on July 21st, 2015
